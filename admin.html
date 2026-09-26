@@ -68,6 +68,7 @@
   <button data-tab="tarif">Tarif &amp; Shift</button>
   <button data-tab="rekap">Rekap Honor</button>
   <button data-tab="absensi">Riwayat Absensi</button>
+  <button data-tab="akun" id="navAkun" style="display:none;">Akun Admin</button>
 </nav>
 <main>
 
@@ -209,12 +210,35 @@
     </div>
   </div>
 
+  <!-- AKUN ADMIN (khusus Super Admin) -->
+  <div class="tab" id="tab-akun">
+    <div class="card">
+      <h3>Tambah / Edit Akun Admin</h3>
+      <p class="muted">Dipakai untuk login dashboard ini (bukan akun dokter). Hanya Super Admin yang bisa mengubah tab ini.</p>
+      <div class="row">
+        <div class="field"><label>Nama</label><input id="akNama" placeholder="Nama akun admin baru, atau nama yang sudah ada untuk edit"></div>
+        <div class="field"><label>PIN</label><input id="akPin" inputmode="numeric" placeholder="4-8 digit"></div>
+        <div class="field"><label>Role</label><select id="akRole"><option>Admin</option><option>Super Admin</option></select></div>
+        <div class="field"><label>Status</label><select id="akStatus"><option>Aktif</option><option>Nonaktif</option></select></div>
+      </div>
+      <button class="btn" onclick="saveAdminUser()">Simpan Akun</button>
+    </div>
+    <div class="card">
+      <h3>Daftar Akun Admin</h3>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Nama</th><th>Role</th><th>Status</th><th></th></tr></thead>
+        <tbody id="akunBody"></tbody>
+      </table></div>
+    </div>
+  </div>
+
 </main>
 </div>
 
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbwGZT6va5MWcAmrcFVk1SUAUklRcknCE4tVWrZS8mlU20OuOtZDGR06jY6zK2grZ-P97Q/exec';
 let AKTOR = 'Admin';
+let AKTOR_ROLE = 'Admin';
 let dokterCache = [];
 
 async function api(action, data) {
@@ -227,9 +251,14 @@ function doLogin() {
   api('adminLogin', { pin }).then(j => {
     if (j.ok) {
       AKTOR = j.nama;
+      AKTOR_ROLE = j.role;
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('app').style.display = 'block';
       document.getElementById('whoami').textContent = j.nama + ' (' + j.role + ')';
+      if (j.role === 'Super Admin') {
+        document.getElementById('navAkun').style.display = 'inline-block';
+        loadAdminUsers();
+      }
       initApp();
     } else {
       document.getElementById('loginMsg').textContent = j.error;
@@ -433,6 +462,33 @@ async function koreksi(r) {
   const ket = prompt('Keterangan koreksi (opsional):', r.Keterangan || '');
   const j = await api('updateAbsensi', { data: { ID_Absen: r.ID_Absen, Nominal: nominalBaru, Keterangan: ket } });
   if (j.ok) loadAbsensiRange(); else alert(j.error);
+}
+
+/* ===== AKUN ADMIN (Super Admin only) ===== */
+async function loadAdminUsers() {
+  const j = await api('getAdminUsers');
+  if (!j.ok) return;
+  document.getElementById('akunBody').innerHTML = j.data.map(r => `
+    <tr><td>${r.Nama}</td><td>${r.Role}</td><td>${r.Status}</td>
+    <td><button class="btn sm bad" onclick="deleteAdminUser('${r.Nama}')">Hapus</button></td></tr>
+  `).join('') || '<tr><td colspan="4" class="muted">Belum ada akun</td></tr>';
+}
+async function saveAdminUser() {
+  const data = {
+    Nama: document.getElementById('akNama').value,
+    PIN: document.getElementById('akPin').value,
+    Role: document.getElementById('akRole').value,
+    Status: document.getElementById('akStatus').value
+  };
+  if (!data.Nama || !data.PIN) return alert('Nama dan PIN wajib diisi');
+  const j = await api('saveAdminUser', { data });
+  if (j.ok) { loadAdminUsers(); document.getElementById('akNama').value=''; document.getElementById('akPin').value=''; }
+  else alert(j.error);
+}
+async function deleteAdminUser(nama) {
+  if (!confirm('Hapus akun admin "' + nama + '"?')) return;
+  const j = await api('deleteAdminUser', { nama });
+  if (j.ok) loadAdminUsers(); else alert(j.error);
 }
 
 function initApp() {
