@@ -16,9 +16,16 @@
   label{display:block;font-size:.85rem;font-weight:600;color:#334155;margin-bottom:6px;}
   select,input{width:100%;padding:14px;border:1px solid #cbd5e1;border-radius:10px;font-size:1rem;margin-bottom:16px;}
   input#pin{letter-spacing:8px;text-align:center;font-size:1.4rem;font-weight:700;}
+  .cam-box{position:relative;border-radius:12px;overflow:hidden;background:#000;margin-bottom:10px;}
+  video,canvas{width:100%;display:block;}
+  canvas{display:none;}
+  .status-row{display:flex;gap:8px;align-items:center;font-size:.78rem;color:#64748b;margin-bottom:14px;}
+  .dot{width:8px;height:8px;border-radius:50%;background:#cbd5e1;flex:0 0 auto;}
+  .dot.ok{background:var(--ok);}
+  .dot.bad{background:var(--bad);}
   button{width:100%;padding:16px;border:none;border-radius:10px;background:var(--pri);color:#fff;font-weight:700;font-size:1.05rem;cursor:pointer;}
   button:disabled{background:#94a3b8;cursor:not-allowed;}
-  .msg{margin-top:14px;padding:14px;border-radius:10px;font-size:.9rem;text-align:center;display:none;}
+  .msg{margin-top:14px;padding:14px;border-radius:10px;font-size:.9rem;text-align:center;display:none;white-space:pre-line;}
   .msg.show{display:block;}
   .msg.ok{background:#dcfce7;color:#166534;}
   .msg.bad{background:#fee2e2;color:#991b1b;}
@@ -30,7 +37,7 @@
 
 <header>
   <h1>🩺 Absensi Dokter Jaga</h1>
-  <p>Pilih nama Anda dan masukkan PIN untuk absen masuk / keluar</p>
+  <p>Pilih nama, masukkan PIN, pastikan wajah &amp; lokasi terverifikasi</p>
 </header>
 
 <div class="wrap">
@@ -40,6 +47,15 @@
 
     <label>PIN</label>
     <input type="password" id="pin" inputmode="numeric" maxlength="8" placeholder="••••">
+
+    <label>Foto Bukti Kehadiran</label>
+    <div class="cam-box">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="status-row"><span class="dot" id="dotCam"></span><span id="statCam">Menyiapkan kamera...</span></div>
+    <div class="status-row"><span class="dot" id="dotGps"></span><span id="statGps">Mencari lokasi GPS...</span></div>
 
     <button id="btnAbsen" onclick="absen()" disabled>Absen Masuk / Keluar</button>
 
@@ -52,6 +68,9 @@
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbwGZT6va5MWcAmrcFVk1SUAUklRcknCE4tVWrZS8mlU20OuOtZDGR06jY6zK2grZ-P97Q/exec';
 
+let currentLat = null, currentLon = null;
+let camReady = false;
+
 async function api(action, data) {
   const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action }, data || {})) });
   return res.json();
@@ -63,6 +82,59 @@ function setMsg(text, cls) {
   el.className = 'msg show ' + (cls || '');
 }
 
+function updateBtnState() {
+  const idDokter = document.getElementById('selDokter').value;
+  document.getElementById('btnAbsen').disabled = !(idDokter && camReady);
+}
+
+/* ===== Kamera (hanya ambil foto, tanpa AI/model — tidak butuh CDN eksternal) ===== */
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 480, height: 360 } });
+    document.getElementById('video').srcObject = stream;
+    camReady = true;
+    document.getElementById('dotCam').className = 'dot ok';
+    document.getElementById('statCam').textContent = 'Kamera siap';
+  } catch (e) {
+    document.getElementById('dotCam').className = 'dot bad';
+    document.getElementById('statCam').textContent = 'Kamera tidak tersedia: ' + e.message;
+    camReady = false;
+  }
+  updateBtnState();
+}
+
+function capturePhoto() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  canvas.width = video.videoWidth || 480;
+  canvas.height = video.videoHeight || 360;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.7);
+}
+
+/* ===== GPS ===== */
+function startGps() {
+  if (!navigator.geolocation) {
+    document.getElementById('dotGps').className = 'dot bad';
+    document.getElementById('statGps').textContent = 'Perangkat tidak mendukung GPS';
+    return;
+  }
+  navigator.geolocation.watchPosition(
+    pos => {
+      currentLat = pos.coords.latitude;
+      currentLon = pos.coords.longitude;
+      document.getElementById('dotGps').className = 'dot ok';
+      document.getElementById('statGps').textContent = 'Lokasi terkunci (akurasi ~' + Math.round(pos.coords.accuracy) + 'm)';
+    },
+    err => {
+      document.getElementById('dotGps').className = 'dot bad';
+      document.getElementById('statGps').textContent = 'Gagal ambil lokasi: ' + err.message;
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+  );
+}
+
+/* ===== Dokter list ===== */
 async function loadDokterList() {
   const sel = document.getElementById('selDokter');
   try {
@@ -70,7 +142,6 @@ async function loadDokterList() {
     if (j.ok && j.data.length) {
       sel.innerHTML = '<option value="">-- Pilih nama --</option>' +
         j.data.map(d => `<option value="${d.id}">${d.nama} (${d.kategori})</option>`).join('');
-      document.getElementById('btnAbsen').disabled = false;
     } else {
       sel.innerHTML = '<option value="">Tidak ada dokter aktif</option>';
     }
@@ -78,24 +149,32 @@ async function loadDokterList() {
     sel.innerHTML = '<option value="">Gagal memuat, coba muat ulang halaman</option>';
     setMsg('Gagal memuat daftar dokter: ' + e.message, 'bad');
   }
+  updateBtnState();
 }
+document.getElementById('selDokter').addEventListener('change', updateBtnState);
 
+/* ===== Absen ===== */
 async function absen() {
   const idDokter = document.getElementById('selDokter').value;
   const pin = document.getElementById('pin').value;
   if (!idDokter) return setMsg('Pilih nama dokter dahulu', 'bad');
   if (!pin) return setMsg('Masukkan PIN', 'bad');
+  if (!camReady) return setMsg('Kamera belum siap', 'bad');
+  if (currentLat === null || currentLon === null) return setMsg('Lokasi GPS belum terkunci, tunggu sebentar', 'bad');
 
   const btn = document.getElementById('btnAbsen');
   btn.disabled = true;
   setMsg('Memproses...', '');
 
+  const fotoBase64 = capturePhoto();
+
   try {
-    const j = await api('recordAbsen', { id_dokter: idDokter, pin });
+    const j = await api('recordAbsen', { id_dokter: idDokter, pin, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 });
     if (j.ok) {
       const label = j.mode === 'masuk' ? 'ABSEN MASUK' : 'ABSEN KELUAR';
       let detail = `${label} berhasil — ${j.nama}\n${j.kategori} / ${j.shift}\nJam: ${j.jam}`;
       if (j.mode === 'keluar') detail += `\nDurasi: ${j.durasi_jam} jam`;
+      detail += `\nJarak dari RS: ${j.jarak_meter} m`;
       detail += `\nNominal: Rp ${Number(j.nominal || 0).toLocaleString('id-ID')}`;
       setMsg(detail, 'ok');
       document.getElementById('pin').value = '';
@@ -105,7 +184,7 @@ async function absen() {
   } catch (e) {
     setMsg('Gagal terhubung ke server: ' + e.message, 'bad');
   } finally {
-    btn.disabled = false;
+    updateBtnState();
   }
 }
 
@@ -114,6 +193,8 @@ function tickClock() {
 }
 setInterval(tickClock, 1000); tickClock();
 
+startCamera();
+startGps();
 loadDokterList();
 </script>
 </body>
