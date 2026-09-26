@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin - SIABSEN Dokter</title>
+<style>
+  :root{--pri:#0d6efd;--ok:#198754;--bad:#dc3545;--bg:#f1f5f9;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:#1e293b;}
+  header{background:#0f172a;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+  header h1{margin:0;font-size:1.1rem;}
+  header .who{font-size:.8rem;color:#94a3b8;}
+  #loginScreen{max-width:340px;margin:80px auto;background:#fff;padding:24px;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.1);}
+  #loginScreen h2{margin-top:0;font-size:1.1rem;}
+  #loginScreen input{width:100%;padding:12px;font-size:1.1rem;letter-spacing:4px;text-align:center;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;}
+  #loginScreen button{width:100%;padding:12px;background:var(--pri);color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;}
+  #app{display:none;}
+  nav{display:flex;gap:6px;padding:10px 16px;background:#fff;overflow-x:auto;border-bottom:1px solid #e2e8f0;}
+  nav button{flex:0 0 auto;padding:9px 14px;border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:.85rem;color:#475569;font-weight:600;white-space:nowrap;}
+  nav button.active{background:var(--pri);color:#fff;}
+  main{padding:16px;max-width:1100px;margin:0 auto;}
+  .tab{display:none;}
+  .tab.active{display:block;}
+  .card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:16px;}
+  .card h3{margin:0 0 12px;font-size:1rem;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end;}
+  .field{flex:1 1 160px;}
+  .field label{display:block;font-size:.75rem;color:#64748b;margin-bottom:4px;font-weight:600;}
+  input,select{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:7px;font-size:.85rem;}
+  button.btn{padding:9px 16px;border:none;border-radius:7px;background:var(--pri);color:#fff;font-weight:600;cursor:pointer;font-size:.85rem;}
+  button.btn.ok{background:var(--ok);}
+  button.btn.bad{background:var(--bad);}
+  button.btn.sm{padding:5px 10px;font-size:.75rem;}
+  table{width:100%;border-collapse:collapse;font-size:.82rem;}
+  th,td{padding:8px 6px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;}
+  th{color:#64748b;font-weight:600;background:#f8fafc;}
+  tr:hover{background:#f8fafc;}
+  .tag{padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700;}
+  .tag.IGD{background:#fee2e2;color:#991b1b;}
+  .tag.Bangsal{background:#dbeafe;color:#1e40af;}
+  .tag.Manajerial{background:#ede9fe;color:#5b21b6;}
+  .muted{color:#94a3b8;font-size:.78rem;}
+  .totalbar{font-weight:700;margin-top:8px;text-align:right;font-size:.95rem;}
+  .scroll-x{overflow-x:auto;}
+  .badge-live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px;animation:pulse 1.5s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <h2>🔐 Login Admin SIABSEN-Dokter</h2>
+  <input type="password" id="pinInput" inputmode="numeric" placeholder="PIN" maxlength="8">
+  <button onclick="doLogin()">Masuk</button>
+  <div id="loginMsg" class="muted" style="margin-top:8px;"></div>
+</div>
+
+<div id="app">
+<header>
+  <h1>🩺 SIABSEN-DOKTER — Admin</h1>
+  <div class="who" id="whoami"></div>
+</header>
+<nav>
+  <button data-tab="monitor" class="active">Monitoring</button>
+  <button data-tab="dokter">Data Dokter</button>
+  <button data-tab="jadwal">Jadwal Jaga</button>
+  <button data-tab="tarif">Tarif &amp; Shift</button>
+  <button data-tab="rekap">Rekap Honor</button>
+  <button data-tab="absensi">Riwayat Absensi</button>
+</nav>
+<main>
+
+  <!-- MONITORING -->
+  <div class="tab active" id="tab-monitor">
+    <div class="card">
+      <h3><span class="badge-live"></span>Absensi Hari Ini — <span id="monTanggal"></span></h3>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Keluar</th><th>Durasi</th><th>Nominal</th></tr></thead>
+        <tbody id="monBody"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- DOKTER -->
+  <div class="tab" id="tab-dokter">
+    <div class="card">
+      <h3>Tambah / Edit Dokter</h3>
+      <input type="hidden" id="dkId">
+      <div class="row">
+        <div class="field"><label>Nama</label><input id="dkNama"></div>
+        <div class="field"><label>Kategori Default</label>
+          <select id="dkKategori"><option>IGD</option><option>Bangsal</option><option>Manajerial</option></select>
+        </div>
+        <div class="field"><label>Jabatan Manajerial (jika ada)</label><input id="dkJabatan" placeholder="cth: Wadir Umum & Keuangan"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>SIP</label><input id="dkSip"></div>
+        <div class="field"><label>No. HP</label><input id="dkHp"></div>
+        <div class="field"><label>Status</label><select id="dkStatus"><option>Aktif</option><option>Nonaktif</option></select></div>
+      </div>
+      <button class="btn" onclick="saveDokter()">Simpan Dokter</button>
+      <button class="btn" style="background:#94a3b8" onclick="resetDokterForm()">Form Baru</button>
+    </div>
+    <div class="card">
+      <h3>Daftar Dokter</h3>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Nama</th><th>Kategori</th><th>Jabatan</th><th>Status</th><th>Wajah</th><th></th></tr></thead>
+        <tbody id="dokterBody"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- JADWAL -->
+  <div class="tab" id="tab-jadwal">
+    <div class="card">
+      <h3>Tambah Jadwal Jaga</h3>
+      <div class="row">
+        <div class="field"><label>Tanggal</label><input type="date" id="jdTanggal"></div>
+        <div class="field"><label>Dokter</label><select id="jdDokter"></select></div>
+        <div class="field"><label>Kategori Sesi Ini</label><select id="jdKategori"><option>IGD</option><option>Bangsal</option><option>Manajerial</option></select></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Rencana Jam Mulai</label><input type="time" id="jdJamMulai"></div>
+        <div class="field"><label>Rencana Jam Selesai</label><input type="time" id="jdJamSelesai"></div>
+      </div>
+      <button class="btn" onclick="saveJadwal()">Simpan Jadwal</button>
+    </div>
+    <div class="card">
+      <h3>Jadwal Bulan Ini &nbsp;<input type="month" id="jdFilterBulan" onchange="loadJadwal()"></h3>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Tanggal</th><th>Nama</th><th>Kategori</th><th>Jam</th><th>Status</th><th></th></tr></thead>
+        <tbody id="jadwalBody"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- TARIF -->
+  <div class="tab" id="tab-tarif">
+    <div class="card">
+      <h3>Tarif per Shift (IGD / Bangsal)</h3>
+      <div class="row">
+        <div class="field"><label>Kategori</label><select id="tsKategori"><option>IGD</option><option>Bangsal</option></select></div>
+        <div class="field"><label>Shift</label><select id="tsShift"><option>Pagi</option><option>Siang</option><option>Malam</option></select></div>
+        <div class="field"><label>Nominal (Rp)</label><input type="number" id="tsNominal"></div>
+        <div class="field"><label>Berlaku Mulai</label><input type="date" id="tsBerlaku"></div>
+      </div>
+      <button class="btn" onclick="saveTarifShift()">Simpan Tarif Shift</button>
+      <div class="scroll-x" style="margin-top:12px;"><table>
+        <thead><tr><th>Kategori</th><th>Shift</th><th>Nominal</th><th>Berlaku Mulai</th></tr></thead>
+        <tbody id="tarifShiftBody"></tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <h3>Tarif Manajerial (per Jam)</h3>
+      <div class="row">
+        <div class="field"><label>Jabatan (atau "Umum")</label><input id="tmJabatan" placeholder="Umum / nama jabatan spesifik"></div>
+        <div class="field"><label>Nominal per Jam (Rp)</label><input type="number" id="tmNominal"></div>
+        <div class="field"><label>Berlaku Mulai</label><input type="date" id="tmBerlaku"></div>
+      </div>
+      <button class="btn" onclick="saveTarifManajerial()">Simpan Tarif Manajerial</button>
+      <div class="scroll-x" style="margin-top:12px;"><table>
+        <thead><tr><th>Jabatan</th><th>Nominal/Jam</th><th>Berlaku Mulai</th></tr></thead>
+        <tbody id="tarifManBody"></tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <h3>Konfigurasi Jam Shift</h3>
+      <p class="muted">Menentukan jam berapa saja disebut Pagi/Siang/Malam. Dipakai untuk deteksi otomatis shift IGD &amp; Bangsal saat absen masuk.</p>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Nama Shift</th><th>Jam Mulai</th><th>Jam Selesai</th></tr></thead>
+        <tbody id="shiftConfigBody"></tbody>
+      </table></div>
+      <button class="btn" onclick="saveShiftConfig()" style="margin-top:10px;">Simpan Konfigurasi Shift</button>
+    </div>
+  </div>
+
+  <!-- REKAP -->
+  <div class="tab" id="tab-rekap">
+    <div class="card">
+      <h3>Rekap Honor Jaga Bulanan</h3>
+      <div class="row">
+        <div class="field"><label>Bulan</label><input type="month" id="rkBulan"></div>
+        <button class="btn" onclick="loadRekap()">Tampilkan</button>
+      </div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Nama</th><th>Kategori</th><th>Jumlah Shift/Sesi</th><th>Total Jam (Manajerial)</th><th>Total Honor</th></tr></thead>
+        <tbody id="rekapBody"></tbody>
+      </table></div>
+      <div class="totalbar" id="rekapTotal"></div>
+    </div>
+  </div>
+
+  <!-- ABSENSI HISTORY -->
+  <div class="tab" id="tab-absensi">
+    <div class="card">
+      <h3>Riwayat &amp; Koreksi Manual Absensi</h3>
+      <div class="row">
+        <div class="field"><label>Dari</label><input type="date" id="abDari"></div>
+        <div class="field"><label>Sampai</label><input type="date" id="abSampai"></div>
+        <button class="btn" onclick="loadAbsensiRange()">Cari</button>
+      </div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Tgl</th><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Keluar</th><th>Nominal</th><th>Status</th><th></th></tr></thead>
+        <tbody id="absensiBody"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script>
+const API_URL = 'PASTE_URL_WEBAPP_APPS_SCRIPT_DISINI';
+let AKTOR = 'Admin';
+let dokterCache = [];
+
+async function api(action, data) {
+  const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action, aktor: AKTOR }, data || {})) });
+  return res.json();
+}
+
+function doLogin() {
+  const pin = document.getElementById('pinInput').value;
+  api('adminLogin', { pin }).then(j => {
+    if (j.ok) {
+      AKTOR = j.nama;
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('whoami').textContent = j.nama + ' (' + j.role + ')';
+      initApp();
+    } else {
+      document.getElementById('loginMsg').textContent = j.error;
+      document.getElementById('loginMsg').style.color = '#dc3545';
+    }
+  });
+}
+
+// tab switching
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+function fmtRp(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function tagHtml(kat) { return `<span class="tag ${kat}">${kat}</span>`; }
+
+/* ===== MONITORING ===== */
+async function loadMonitor() {
+  const j = await api('getAbsensiHariIni');
+  if (!j.ok) return;
+  document.getElementById('monTanggal').textContent = j.tanggal;
+  document.getElementById('monBody').innerHTML = j.data.map(r => `
+    <tr><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td><td>${r.Shift_Terdeteksi}</td>
+    <td>${r.Jam_Masuk}</td><td>${r.Jam_Keluar || '<span class="muted">belum keluar</span>'}</td>
+    <td>${r.Durasi_Jam || '-'}</td><td>${fmtRp(r.Nominal)}</td></tr>
+  `).join('') || '<tr><td colspan="7" class="muted">Belum ada absensi hari ini</td></tr>';
+}
+
+/* ===== DOKTER ===== */
+async function loadDokter() {
+  const j = await api('getDokter');
+  if (!j.ok) return;
+  dokterCache = j.data;
+  document.getElementById('dokterBody').innerHTML = j.data.map(d => `
+    <tr>
+      <td>${d.Nama}</td><td>${tagHtml(d.Kategori_Default)}</td><td>${d.Jabatan_Manajerial || '-'}</td>
+      <td>${d.Status}</td><td>${d.Punya_Face ? '✅' : '❌ belum'}</td>
+      <td>
+        <button class="btn sm" onclick='editDokter(${JSON.stringify(d).replace(/'/g,"&apos;")})'>Edit</button>
+        <button class="btn sm bad" onclick="deleteDokter('${d.ID_Dokter}')">Hapus</button>
+      </td>
+    </tr>`).join('');
+  populateDokterSelect();
+}
+function populateDokterSelect() {
+  document.getElementById('jdDokter').innerHTML = dokterCache.map(d => `<option value="${d.ID_Dokter}">${d.Nama}</option>`).join('');
+}
+function editDokter(d) {
+  document.getElementById('dkId').value = d.ID_Dokter;
+  document.getElementById('dkNama').value = d.Nama;
+  document.getElementById('dkKategori').value = d.Kategori_Default;
+  document.getElementById('dkJabatan').value = d.Jabatan_Manajerial || '';
+  document.getElementById('dkSip').value = d.SIP || '';
+  document.getElementById('dkHp').value = d.No_HP || '';
+  document.getElementById('dkStatus').value = d.Status || 'Aktif';
+}
+function resetDokterForm() {
+  ['dkId','dkNama','dkJabatan','dkSip','dkHp'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('dkKategori').value = 'IGD';
+  document.getElementById('dkStatus').value = 'Aktif';
+}
+async function saveDokter() {
+  const data = {
+    ID_Dokter: document.getElementById('dkId').value,
+    Nama: document.getElementById('dkNama').value,
+    Kategori_Default: document.getElementById('dkKategori').value,
+    Jabatan_Manajerial: document.getElementById('dkJabatan').value,
+    SIP: document.getElementById('dkSip').value,
+    No_HP: document.getElementById('dkHp').value,
+    Status: document.getElementById('dkStatus').value
+  };
+  if (!data.Nama) return alert('Nama wajib diisi');
+  const j = await api('saveDokter', { data });
+  if (j.ok) { resetDokterForm(); loadDokter(); } else alert(j.error);
+}
+async function deleteDokter(id) {
+  if (!confirm('Hapus dokter ini?')) return;
+  const j = await api('deleteDokter', { id });
+  if (j.ok) loadDokter(); else alert(j.error);
+}
+
+/* ===== JADWAL ===== */
+async function loadJadwal() {
+  const bulan = document.getElementById('jdFilterBulan').value;
+  const j = await api('getJadwal', { bulan });
+  if (!j.ok) return;
+  document.getElementById('jadwalBody').innerHTML = j.data.map(r => `
+    <tr><td>${r.Tanggal}</td><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td>
+    <td>${r.Jam_Mulai_Rencana||''}-${r.Jam_Selesai_Rencana||''}</td><td>${r.Status}</td>
+    <td><button class="btn sm bad" onclick="deleteJadwal('${r.ID_Jadwal}')">Hapus</button></td></tr>
+  `).join('') || '<tr><td colspan="6" class="muted">Tidak ada jadwal</td></tr>';
+}
+async function saveJadwal() {
+  const dokterSel = document.getElementById('jdDokter');
+  const data = {
+    Tanggal: document.getElementById('jdTanggal').value,
+    ID_Dokter: dokterSel.value,
+    Nama_Dokter: dokterSel.options[dokterSel.selectedIndex]?.text || '',
+    Kategori: document.getElementById('jdKategori').value,
+    Jam_Mulai_Rencana: document.getElementById('jdJamMulai').value,
+    Jam_Selesai_Rencana: document.getElementById('jdJamSelesai').value
+  };
+  if (!data.Tanggal || !data.ID_Dokter) return alert('Tanggal dan Dokter wajib diisi');
+  const j = await api('saveJadwal', { data });
+  if (j.ok) loadJadwal(); else alert(j.error);
+}
+async function deleteJadwal(id) {
+  if (!confirm('Hapus jadwal ini?')) return;
+  const j = await api('deleteJadwal', { id });
+  if (j.ok) loadJadwal(); else alert(j.error);
+}
+
+/* ===== TARIF ===== */
+async function loadTarif() {
+  const j1 = await api('getTarifShift');
+  if (j1.ok) document.getElementById('tarifShiftBody').innerHTML = j1.data.map(r => `
+    <tr><td>${tagHtml(r.Kategori)}</td><td>${r.Shift}</td><td>${fmtRp(r.Nominal)}</td><td>${r.Berlaku_Mulai}</td></tr>
+  `).join('');
+  const j2 = await api('getTarifManajerial');
+  if (j2.ok) document.getElementById('tarifManBody').innerHTML = j2.data.map(r => `
+    <tr><td>${r.Jabatan}</td><td>${fmtRp(r.Nominal_Per_Jam)}</td><td>${r.Berlaku_Mulai}</td></tr>
+  `).join('');
+  const j3 = await api('getShiftConfig');
+  if (j3.ok) document.getElementById('shiftConfigBody').innerHTML = j3.data.map((r,i) => `
+    <tr>
+      <td><input value="${r.Nama_Shift}" id="scNama${i}"></td>
+      <td><input type="time" value="${r.Jam_Mulai}" id="scMulai${i}"></td>
+      <td><input type="time" value="${r.Jam_Selesai}" id="scSelesai${i}"></td>
+    </tr>`).join('');
+  window._shiftConfigCount = j3.ok ? j3.data.length : 0;
+}
+async function saveTarifShift() {
+  const data = {
+    Kategori: document.getElementById('tsKategori').value,
+    Shift: document.getElementById('tsShift').value,
+    Nominal: document.getElementById('tsNominal').value,
+    Berlaku_Mulai: document.getElementById('tsBerlaku').value
+  };
+  if (!data.Nominal || !data.Berlaku_Mulai) return alert('Lengkapi nominal & tanggal berlaku');
+  const j = await api('saveTarifShift', { data });
+  if (j.ok) loadTarif(); else alert(j.error);
+}
+async function saveTarifManajerial() {
+  const data = {
+    Jabatan: document.getElementById('tmJabatan').value || 'Umum',
+    Nominal_Per_Jam: document.getElementById('tmNominal').value,
+    Berlaku_Mulai: document.getElementById('tmBerlaku').value
+  };
+  if (!data.Nominal_Per_Jam || !data.Berlaku_Mulai) return alert('Lengkapi nominal & tanggal berlaku');
+  const j = await api('saveTarifManajerial', { data });
+  if (j.ok) loadTarif(); else alert(j.error);
+}
+async function saveShiftConfig() {
+  const n = window._shiftConfigCount || 0;
+  const data = [];
+  for (let i = 0; i < n; i++) {
+    data.push({
+      Nama_Shift: document.getElementById('scNama' + i).value,
+      Jam_Mulai: document.getElementById('scMulai' + i).value,
+      Jam_Selesai: document.getElementById('scSelesai' + i).value
+    });
+  }
+  const j = await api('saveShiftConfig', { data });
+  if (j.ok) { alert('Konfigurasi shift tersimpan'); loadTarif(); } else alert(j.error);
+}
+
+/* ===== REKAP ===== */
+async function loadRekap() {
+  const bulan = document.getElementById('rkBulan').value;
+  if (!bulan) return alert('Pilih bulan');
+  const j = await api('getRekapHonor', { bulan });
+  if (!j.ok) return alert(j.error);
+  document.getElementById('rekapBody').innerHTML = j.data.map(r => `
+    <tr><td>${r.nama}</td><td>${tagHtml(r.kategori)}</td><td>${r.jumlah_shift}</td>
+    <td>${r.kategori === 'Manajerial' ? r.total_jam.toFixed(2) : '-'}</td><td>${fmtRp(r.total_nominal)}</td></tr>
+  `).join('') || '<tr><td colspan="5" class="muted">Tidak ada data</td></tr>';
+  const total = j.data.reduce((a, b) => a + b.total_nominal, 0);
+  document.getElementById('rekapTotal').textContent = 'Total seluruh dokter: ' + fmtRp(total);
+}
+
+/* ===== RIWAYAT ABSENSI ===== */
+async function loadAbsensiRange() {
+  const dari = document.getElementById('abDari').value;
+  const sampai = document.getElementById('abSampai').value;
+  const j = await api('getAbsensiRange', { dari, sampai });
+  if (!j.ok) return;
+  document.getElementById('absensiBody').innerHTML = j.data.map(r => `
+    <tr><td>${r.Tanggal}</td><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td><td>${r.Shift_Terdeteksi}</td>
+    <td>${r.Jam_Masuk}</td><td>${r.Jam_Keluar}</td><td>${fmtRp(r.Nominal)}</td><td>${r.Status_Nominal}</td>
+    <td><button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button></td></tr>
+  `).join('') || '<tr><td colspan="9" class="muted">Tidak ada data</td></tr>';
+}
+async function koreksi(r) {
+  const nominalBaru = prompt('Koreksi nominal untuk ' + r.Nama_Dokter + ' (' + r.Tanggal + '):', r.Nominal);
+  if (nominalBaru === null) return;
+  const ket = prompt('Keterangan koreksi (opsional):', r.Keterangan || '');
+  const j = await api('updateAbsensi', { data: { ID_Absen: r.ID_Absen, Nominal: nominalBaru, Keterangan: ket } });
+  if (j.ok) loadAbsensiRange(); else alert(j.error);
+}
+
+function initApp() {
+  const today = new Date();
+  document.getElementById('jdFilterBulan').value = today.toISOString().slice(0,7);
+  document.getElementById('rkBulan').value = today.toISOString().slice(0,7);
+  loadMonitor(); loadDokter(); loadJadwal(); loadTarif();
+  setInterval(loadMonitor, 20000);
+}
+</script>
+</body>
+</html>

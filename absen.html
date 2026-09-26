@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Absensi Dokter - Face ID</title>
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<style>
+  :root{--pri:#0d6efd;--ok:#198754;--bad:#dc3545;--bg:#0f172a;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;}
+  header{padding:18px 16px 6px;text-align:center;}
+  header h1{margin:0;font-size:1.25rem;color:#fff;}
+  header p{margin:4px 0 0;font-size:.85rem;color:#94a3b8;}
+  .wrap{width:100%;max-width:480px;padding:12px 16px 32px;}
+  .cam-box{position:relative;border-radius:16px;overflow:hidden;background:#000;box-shadow:0 0 0 3px rgba(255,255,255,.06);}
+  video,canvas{width:100%;display:block;}
+  canvas{position:absolute;top:0;left:0;}
+  .status-bar{margin-top:14px;padding:14px;border-radius:12px;background:#1e293b;text-align:center;min-height:64px;display:flex;flex-direction:column;justify-content:center;gap:2px;}
+  .status-bar.ok{background:rgba(25,135,84,.2);border:1px solid var(--ok);}
+  .status-bar.bad{background:rgba(220,53,69,.2);border:1px solid var(--bad);}
+  .status-bar .main{font-size:1.05rem;font-weight:600;color:#fff;}
+  .status-bar .sub{font-size:.8rem;color:#94a3b8;}
+  .clock{text-align:center;margin-top:10px;font-size:.85rem;color:#64748b;}
+  .result-card{margin-top:14px;padding:18px;border-radius:14px;background:#132a1c;border:1px solid var(--ok);text-align:center;display:none;}
+  .result-card.show{display:block;}
+  .result-card .nama{font-size:1.3rem;font-weight:700;color:#fff;}
+  .result-card .mode{display:inline-block;margin-top:6px;padding:4px 12px;border-radius:20px;font-size:.8rem;font-weight:600;}
+  .mode.masuk{background:var(--ok);color:#fff;}
+  .mode.keluar{background:#fd7e14;color:#fff;}
+  .result-card .detail{margin-top:10px;font-size:.85rem;color:#cbd5e1;line-height:1.5;}
+  .result-card .nominal{margin-top:8px;font-size:1.1rem;font-weight:700;color:#4ade80;}
+  footer{margin-top:auto;padding:14px;font-size:.75rem;color:#475569;text-align:center;}
+  a.back{color:#64748b;text-decoration:none;font-size:.8rem;}
+  .spinner{width:34px;height:34px;border:4px solid #334155;border-top-color:var(--pri);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🩺 Absensi Dokter Jaga</h1>
+  <p>Arahkan wajah ke kamera untuk absen masuk / keluar</p>
+</header>
+<div class="wrap">
+  <div class="cam-box">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div class="status-bar" id="statusBar">
+    <div class="spinner" id="spinner"></div>
+    <div class="main" id="statusMain">Memuat model pengenalan wajah...</div>
+    <div class="sub" id="statusSub">Mohon tunggu sebentar</div>
+  </div>
+
+  <div class="clock" id="clock"></div>
+
+  <div class="result-card" id="resultCard">
+    <div class="nama" id="rNama"></div>
+    <span class="mode" id="rMode"></span>
+    <div class="detail" id="rDetail"></div>
+    <div class="nominal" id="rNominal"></div>
+  </div>
+</div>
+<footer>
+  <a class="back" href="index.html">&larr; Kembali ke menu</a><br>
+  SIABSEN-DOKTER · RSU Allam Medica
+</footer>
+
+<script>
+/* ====== GANTI SETIAP DEPLOY ULANG ====== */
+const API_URL = 'PASTE_URL_WEBAPP_APPS_SCRIPT_DISINI';
+/* ======================================= */
+
+const MATCH_THRESHOLD = 0.5; // euclidean distance, semakin kecil semakin cocok
+const COOLDOWN_MS = 15000;   // jeda sebelum orang yang sama bisa absen lagi (hindari double-submit)
+
+let activeFaces = [];
+let lastSubmitByPerson = {};
+let busy = false;
+let modelsReady = false;
+
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const statusBar = document.getElementById('statusBar');
+const statusMain = document.getElementById('statusMain');
+const statusSub = document.getElementById('statusSub');
+const spinner = document.getElementById('spinner');
+const resultCard = document.getElementById('resultCard');
+
+function setStatus(main, sub, cls) {
+  statusMain.textContent = main;
+  statusSub.textContent = sub || '';
+  statusBar.className = 'status-bar' + (cls ? (' ' + cls) : '');
+}
+
+function tickClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' });
+}
+setInterval(tickClock, 1000); tickClock();
+
+async function startCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 480, height: 360 } });
+  video.srcObject = stream;
+  return new Promise(resolve => video.onloadedmetadata = () => resolve());
+}
+
+async function loadModels() {
+  const base = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights';
+  await Promise.all([
+    faceapi.nets.tinyFaceDetector.loadFromUri(base),
+    faceapi.nets.faceLandmark68Net.loadFromUri(base),
+    faceapi.nets.faceRecognitionNet.loadFromUri(base)
+  ]);
+}
+
+async function loadActiveFaces() {
+  const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'getActiveFaces' }) });
+  const json = await res.json();
+  if (json.ok) {
+    activeFaces = json.data.map(p => ({ ...p, descriptor: new Float32Array(p.descriptor) }));
+  }
+}
+
+function captureThumbnail() {
+  const c = document.createElement('canvas');
+  c.width = 160; c.height = 120;
+  c.getContext('2d').drawImage(video, 0, 0, 160, 120);
+  return c.toDataURL('image/jpeg', 0.5);
+}
+
+async function submitAbsen(match, distance) {
+  busy = true;
+  setStatus('Memproses absensi untuk ' + match.nama + '...', '', '');
+  spinner.style.display = 'block';
+  try {
+    const foto = captureThumbnail();
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'recordAbsen',
+        id_dokter: match.id,
+        match_score: (1 - distance).toFixed(3),
+        foto_base64: foto
+      })
+    });
+    const json = await res.json();
+    spinner.style.display = 'none';
+    if (json.ok) {
+      showResult(json);
+      setStatus('Berhasil dicatat', 'Arahkan wajah lagi untuk dokter berikutnya', 'ok');
+    } else {
+      setStatus('Gagal mencatat absen', json.error || '', 'bad');
+    }
+  } catch (e) {
+    spinner.style.display = 'none';
+    setStatus('Koneksi gagal', 'Periksa jaringan internet, lalu coba lagi', 'bad');
+  }
+  lastSubmitByPerson[match.id] = Date.now();
+  setTimeout(() => { busy = false; }, 3000);
+}
+
+function showResult(json) {
+  document.getElementById('rNama').textContent = json.nama;
+  const modeEl = document.getElementById('rMode');
+  modeEl.textContent = json.mode === 'masuk' ? 'ABSEN MASUK' : 'ABSEN KELUAR';
+  modeEl.className = 'mode ' + json.mode;
+  let detail = 'Kategori: ' + json.kategori + ' &middot; Shift: ' + json.shift + '<br>Jam: ' + json.jam;
+  if (json.durasi_jam) detail += ' &middot; Durasi: ' + json.durasi_jam + ' jam';
+  document.getElementById('rDetail').innerHTML = detail;
+  document.getElementById('rNominal').textContent = json.nominal ? 'Rp ' + Number(json.nominal).toLocaleString('id-ID') : '';
+  resultCard.className = 'result-card show';
+  setTimeout(() => resultCard.className = 'result-card', 8000);
+}
+
+async function detectLoop() {
+  if (modelsReady && !busy) {
+    const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+      .withFaceLandmarks().withFaceDescriptor();
+
+    const ctx = overlay.getContext('2d');
+    overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    if (detection) {
+      faceapi.draw.drawDetections(overlay, [detection]);
+
+      if (activeFaces.length === 0) {
+        setStatus('Belum ada data wajah terdaftar', 'Hubungi admin untuk pendaftaran wajah', 'bad');
+      } else {
+        let best = null, bestDist = 999;
+        activeFaces.forEach(p => {
+          const d = faceapi.euclideanDistance(detection.descriptor, p.descriptor);
+          if (d < bestDist) { bestDist = d; best = p; }
+        });
+        if (best && bestDist < MATCH_THRESHOLD) {
+          const last = lastSubmitByPerson[best.id];
+          if (last && (Date.now() - last) < COOLDOWN_MS) {
+            setStatus('Sudah tercatat', best.nama + ', tunggu sesaat sebelum absen lagi', 'ok');
+          } else {
+            setStatus('Wajah cocok: ' + best.nama, 'Mengonfirmasi...', 'ok');
+            await submitAbsen(best, bestDist);
+          }
+        } else {
+          setStatus('Wajah tidak dikenali', 'Pastikan wajah terdaftar dan pencahayaan cukup', 'bad');
+        }
+      }
+    } else {
+      setStatus('Arahkan wajah ke kamera', 'Posisikan wajah di tengah frame', '');
+    }
+  }
+  requestAnimationFrame(detectLoop);
+}
+
+(async function init() {
+  try {
+    setStatus('Menyiapkan kamera...', '', '');
+    await startCamera();
+    setStatus('Memuat model pengenalan wajah...', '', '');
+    await loadModels();
+    setStatus('Memuat data dokter terdaftar...', '', '');
+    await loadActiveFaces();
+    modelsReady = true;
+    spinner.style.display = 'none';
+    setStatus('Siap', 'Arahkan wajah ke kamera', '');
+    detectLoop();
+  } catch (e) {
+    spinner.style.display = 'none';
+    setStatus('Gagal memuat sistem', e.message, 'bad');
+  }
+})();
+</script>
+</body>
+</html>
