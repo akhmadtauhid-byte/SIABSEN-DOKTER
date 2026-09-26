@@ -36,15 +36,18 @@
   th,td{padding:8px 6px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;}
   th{color:#64748b;font-weight:600;background:#f8fafc;}
   tr:hover{background:#f8fafc;}
-  .tag{padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700;}
+  .tag{padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700;white-space:nowrap;}
   .tag.IGD{background:#fee2e2;color:#991b1b;}
   .tag.Bangsal{background:#dbeafe;color:#1e40af;}
   .tag.Manajerial{background:#ede9fe;color:#5b21b6;}
+  .tag.Manajerial---Fungsional{background:#fef3c7;color:#92400e;}
   .muted{color:#94a3b8;font-size:.78rem;}
   .totalbar{font-weight:700;margin-top:8px;text-align:right;font-size:.95rem;}
   .scroll-x{overflow-x:auto;}
   .badge-live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px;animation:pulse 1.5s infinite;}
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+  .map-hint{font-size:.78rem;color:#64748b;margin-top:6px;}
+  .map-hint a{color:var(--pri);}
 </style>
 </head>
 <body>
@@ -68,6 +71,7 @@
   <button data-tab="tarif">Tarif &amp; Shift</button>
   <button data-tab="rekap">Rekap Honor</button>
   <button data-tab="absensi">Riwayat Absensi</button>
+  <button data-tab="gps" id="navGps" style="display:none;">Lokasi GPS</button>
   <button data-tab="akun" id="navAkun" style="display:none;">Akun Admin</button>
 </nav>
 <main>
@@ -91,10 +95,16 @@
       <div class="row">
         <div class="field"><label>Nama</label><input id="dkNama"></div>
         <div class="field"><label>Kategori Default</label>
-          <select id="dkKategori"><option>IGD</option><option>Bangsal</option><option>Manajerial</option></select>
+          <select id="dkKategori">
+            <option>IGD</option>
+            <option>Bangsal</option>
+            <option>Manajerial</option>
+            <option>Manajerial & Fungsional</option>
+          </select>
         </div>
         <div class="field"><label>Jabatan Manajerial (jika ada)</label><input id="dkJabatan" placeholder="cth: Wadir Umum & Keuangan"></div>
       </div>
+      <p class="muted" id="dkGandaHint" style="display:none;">Dokter berstatus <b>Manajerial &amp; Fungsional</b> hanya bisa absen pada hari yang sudah dibuatkan Jadwal Jaga (tab Jadwal Jaga) — jadwal itu yang menentukan dia bertugas sebagai IGD/Bangsal/Manajerial hari itu, sekaligus tarif yang dipakai.</p>
       <div class="row">
         <div class="field"><label>SIP</label><input id="dkSip"></div>
         <div class="field"><label>No. HP</label><input id="dkHp"></div>
@@ -119,6 +129,7 @@
   <div class="tab" id="tab-jadwal">
     <div class="card">
       <h3>Tambah Jadwal Jaga</h3>
+      <p class="muted">Untuk dokter berstatus <b>Manajerial &amp; Fungsional</b>, jadwal hari ini wajib dibuat di sini — pilih sesi IGD/Bangsal/Manajerial yang berlaku untuk hari itu.</p>
       <div class="row">
         <div class="field"><label>Tanggal</label><input type="date" id="jdTanggal"></div>
         <div class="field"><label>Dokter</label><select id="jdDokter"></select></div>
@@ -213,6 +224,23 @@
     </div>
   </div>
 
+  <!-- GPS (khusus Super Admin) -->
+  <div class="tab" id="tab-gps">
+    <div class="card">
+      <h3>Lokasi &amp; Radius Absen RS</h3>
+      <p class="muted">Dokter hanya bisa absen kalau lokasi GPS-nya berada dalam radius ini dari titik RS. Hanya Super Admin yang bisa mengubah pengaturan ini.</p>
+      <div class="row">
+        <div class="field"><label>Latitude</label><input type="text" id="gpsLat" placeholder="cth: -7.2575"></div>
+        <div class="field"><label>Longitude</label><input type="text" id="gpsLon" placeholder="cth: 109.0500"></div>
+        <div class="field"><label>Radius (meter)</label><input type="number" id="gpsRadius" placeholder="cth: 200"></div>
+      </div>
+      <button class="btn" onclick="saveGpsSettings()">Simpan Lokasi</button>
+      <button class="btn" style="background:#94a3b8" onclick="pakaiLokasiSaatIni()">Isi dari Lokasi Perangkat Ini</button>
+      <p class="map-hint">Tips: cari titik RS di <a href="https://www.google.com/maps" target="_blank" rel="noopener">Google Maps</a>, klik kanan lokasi persis di peta, lalu klik angka koordinat yang muncul untuk menyalinnya, dan tempel ke kolom Latitude/Longitude di atas. Atau, kalau perangkat ini sedang berada di lokasi RS, klik tombol "Isi dari Lokasi Perangkat Ini".</p>
+      <div id="gpsMsg" class="muted" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
   <!-- AKUN ADMIN (khusus Super Admin) -->
   <div class="tab" id="tab-akun">
     <div class="card">
@@ -260,7 +288,9 @@ function doLogin() {
       document.getElementById('whoami').textContent = j.nama + ' (' + j.role + ')';
       if (j.role === 'Super Admin') {
         document.getElementById('navAkun').style.display = 'inline-block';
+        document.getElementById('navGps').style.display = 'inline-block';
         loadAdminUsers();
+        loadGpsSettings();
       }
       initApp();
     } else {
@@ -281,7 +311,8 @@ document.querySelectorAll('nav button').forEach(btn => {
 });
 
 function fmtRp(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
-function tagHtml(kat) { return `<span class="tag ${kat}">${kat}</span>`; }
+function tagClass(kat) { return String(kat || '').replace(/\s*&\s*/g, '---').replace(/\s+/g, '-'); }
+function tagHtml(kat) { return `<span class="tag ${tagClass(kat)}">${kat}</span>`; }
 
 /* ===== MONITORING ===== */
 async function loadMonitor() {
@@ -323,12 +354,19 @@ function editDokter(d) {
   document.getElementById('dkHp').value = d.No_HP || '';
   document.getElementById('dkStatus').value = d.Status || 'Aktif';
   document.getElementById('dkPin').value = d.PIN_Absen || '';
+  updateDkGandaHint();
 }
 function resetDokterForm() {
   ['dkId','dkNama','dkJabatan','dkSip','dkHp','dkPin'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('dkKategori').value = 'IGD';
   document.getElementById('dkStatus').value = 'Aktif';
+  updateDkGandaHint();
 }
+function updateDkGandaHint() {
+  const isGanda = document.getElementById('dkKategori').value === 'Manajerial & Fungsional';
+  document.getElementById('dkGandaHint').style.display = isGanda ? 'block' : 'none';
+}
+document.getElementById('dkKategori').addEventListener('change', updateDkGandaHint);
 async function saveDokter() {
   const data = {
     ID_Dokter: document.getElementById('dkId').value,
@@ -467,6 +505,49 @@ async function koreksi(r) {
   const ket = prompt('Keterangan koreksi (opsional):', r.Keterangan || '');
   const j = await api('updateAbsensi', { data: { ID_Absen: r.ID_Absen, Nominal: nominalBaru, Keterangan: ket } });
   if (j.ok) loadAbsensiRange(); else alert(j.error);
+}
+
+/* ===== GPS (Super Admin only) ===== */
+async function loadGpsSettings() {
+  const j = await api('getGpsSettings');
+  if (!j.ok) return;
+  document.getElementById('gpsLat').value = j.lat;
+  document.getElementById('gpsLon').value = j.lon;
+  document.getElementById('gpsRadius').value = j.radius;
+}
+async function saveGpsSettings() {
+  const lat = document.getElementById('gpsLat').value;
+  const lon = document.getElementById('gpsLon').value;
+  const radius = document.getElementById('gpsRadius').value;
+  if (!lat || !lon || !radius) return alert('Latitude, longitude, dan radius wajib diisi');
+  const j = await api('saveGpsSettings', { lat, lon, radius });
+  const msgEl = document.getElementById('gpsMsg');
+  if (j.ok) {
+    msgEl.textContent = 'Lokasi & radius berhasil disimpan. Dokter akan langsung memakai nilai baru ini di absen berikutnya.';
+    msgEl.style.color = '#166534';
+  } else {
+    msgEl.textContent = j.error;
+    msgEl.style.color = '#dc3545';
+  }
+}
+function pakaiLokasiSaatIni() {
+  if (!navigator.geolocation) return alert('Perangkat ini tidak mendukung GPS');
+  const msgEl = document.getElementById('gpsMsg');
+  msgEl.textContent = 'Mengambil lokasi perangkat ini...';
+  msgEl.style.color = '#64748b';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      document.getElementById('gpsLat').value = pos.coords.latitude.toFixed(6);
+      document.getElementById('gpsLon').value = pos.coords.longitude.toFixed(6);
+      msgEl.textContent = 'Lokasi perangkat ini terisi (akurasi ~' + Math.round(pos.coords.accuracy) + 'm). Periksa dulu lalu klik Simpan Lokasi.';
+      msgEl.style.color = '#166534';
+    },
+    err => {
+      msgEl.textContent = 'Gagal ambil lokasi: ' + err.message;
+      msgEl.style.color = '#dc3545';
+    },
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
 }
 
 /* ===== AKUN ADMIN (Super Admin only) ===== */
