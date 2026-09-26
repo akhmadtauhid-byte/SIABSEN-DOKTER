@@ -104,7 +104,7 @@
         </div>
         <div class="field"><label>Jabatan Manajerial (jika ada)</label><input id="dkJabatan" placeholder="cth: Wadir Umum & Keuangan"></div>
       </div>
-      <p class="muted" id="dkGandaHint" style="display:none;">Dokter berstatus <b>Manajerial &amp; Fungsional</b> hanya bisa absen pada hari yang sudah dibuatkan Jadwal Jaga (tab Jadwal Jaga) — jadwal itu yang menentukan dia bertugas sebagai IGD/Bangsal/Manajerial hari itu, sekaligus tarif yang dipakai.</p>
+      <p class="muted" id="dkGandaHint" style="display:none;">Dokter berstatus <b>Manajerial &amp; Fungsional</b> akan diminta memilih sendiri perannya (IGD/Bangsal/Manajerial) setiap kali absen di absen.html — jadwal di tab Jadwal Jaga bersifat opsional, hanya dipakai kalau memang sudah diisi untuk hari itu.</p>
       <div class="row">
         <div class="field"><label>SIP</label><input id="dkSip"></div>
         <div class="field"><label>No. HP</label><input id="dkHp"></div>
@@ -129,7 +129,7 @@
   <div class="tab" id="tab-jadwal">
     <div class="card">
       <h3>Tambah Jadwal Jaga</h3>
-      <p class="muted">Untuk dokter berstatus <b>Manajerial &amp; Fungsional</b>, jadwal hari ini wajib dibuat di sini — pilih sesi IGD/Bangsal/Manajerial yang berlaku untuk hari itu.</p>
+      <p class="muted">Jadwal di sini bersifat opsional — kalau diisi untuk hari tertentu, sistem memakai kategori dari jadwal ini. Untuk dokter berstatus <b>Manajerial &amp; Fungsional</b> yang tidak ada jadwalnya hari itu, dia akan memilih sendiri perannya saat absen.</p>
       <div class="row">
         <div class="field"><label>Tanggal</label><input type="date" id="jdTanggal"></div>
         <div class="field"><label>Dokter</label><select id="jdDokter"></select></div>
