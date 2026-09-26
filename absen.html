@@ -45,6 +45,16 @@
     <label>Pilih Dokter</label>
     <select id="selDokter"><option value="">Memuat daftar dokter...</option></select>
 
+    <div id="peranBox" style="display:none;">
+      <label>Absen sebagai (peran hari ini)</label>
+      <select id="selPeran">
+        <option value="">-- Pilih peran --</option>
+        <option value="IGD">IGD</option>
+        <option value="Bangsal">Bangsal</option>
+        <option value="Manajerial">Manajerial</option>
+      </select>
+    </div>
+
     <label>PIN</label>
     <input type="password" id="pin" inputmode="numeric" maxlength="8" placeholder="••••">
 
@@ -82,9 +92,15 @@ function setMsg(text, cls) {
   el.className = 'msg show ' + (cls || '');
 }
 
+let dokterKategoriMap = {};
+const KATEGORI_GANDA = 'Manajerial & Fungsional';
+
 function updateBtnState() {
   const idDokter = document.getElementById('selDokter').value;
-  document.getElementById('btnAbsen').disabled = !(idDokter && camReady);
+  const isGanda = idDokter && dokterKategoriMap[idDokter] === KATEGORI_GANDA;
+  document.getElementById('peranBox').style.display = isGanda ? 'block' : 'none';
+  const peranOk = !isGanda || document.getElementById('selPeran').value;
+  document.getElementById('btnAbsen').disabled = !(idDokter && camReady && peranOk);
 }
 
 /* ===== Kamera (hanya ambil foto, tanpa AI/model — tidak butuh CDN eksternal) ===== */
@@ -142,6 +158,8 @@ async function loadDokterList() {
     if (j.ok && j.data.length) {
       sel.innerHTML = '<option value="">-- Pilih nama --</option>' +
         j.data.map(d => `<option value="${d.id}">${d.nama} (${d.kategori})</option>`).join('');
+      dokterKategoriMap = {};
+      j.data.forEach(d => { dokterKategoriMap[d.id] = d.kategori; });
     } else {
       sel.innerHTML = '<option value="">Tidak ada dokter aktif</option>';
     }
@@ -152,12 +170,16 @@ async function loadDokterList() {
   updateBtnState();
 }
 document.getElementById('selDokter').addEventListener('change', updateBtnState);
+document.getElementById('selPeran').addEventListener('change', updateBtnState);
 
 /* ===== Absen ===== */
 async function absen() {
   const idDokter = document.getElementById('selDokter').value;
   const pin = document.getElementById('pin').value;
+  const isGanda = idDokter && dokterKategoriMap[idDokter] === KATEGORI_GANDA;
+  const peran = document.getElementById('selPeran').value;
   if (!idDokter) return setMsg('Pilih nama dokter dahulu', 'bad');
+  if (isGanda && !peran) return setMsg('Pilih dulu peran hari ini (IGD/Bangsal/Manajerial)', 'bad');
   if (!pin) return setMsg('Masukkan PIN', 'bad');
   if (!camReady) return setMsg('Kamera belum siap', 'bad');
   if (currentLat === null || currentLon === null) return setMsg('Lokasi GPS belum terkunci, tunggu sebentar', 'bad');
@@ -169,7 +191,7 @@ async function absen() {
   const fotoBase64 = capturePhoto();
 
   try {
-    const j = await api('recordAbsen', { id_dokter: idDokter, pin, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 });
+    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran: isGanda ? peran : undefined, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 });
     if (j.ok) {
       const label = j.mode === 'masuk' ? 'ABSEN MASUK' : 'ABSEN KELUAR';
       let detail = `${label} berhasil — ${j.nama}\n${j.kategori} / ${j.shift}\nJam: ${j.jam}`;
@@ -178,6 +200,7 @@ async function absen() {
       detail += `\nNominal: Rp ${Number(j.nominal || 0).toLocaleString('id-ID')}`;
       setMsg(detail, 'ok');
       document.getElementById('pin').value = '';
+      document.getElementById('selPeran').value = '';
     } else {
       setMsg(j.error || 'Gagal memproses absensi', 'bad');
     }
