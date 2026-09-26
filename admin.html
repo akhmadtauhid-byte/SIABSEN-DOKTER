@@ -100,13 +100,16 @@
         <div class="field"><label>No. HP</label><input id="dkHp"></div>
         <div class="field"><label>Status</label><select id="dkStatus"><option>Aktif</option><option>Nonaktif</option></select></div>
       </div>
+      <div class="row">
+        <div class="field"><label>PIN Absen (4-8 digit)</label><input id="dkPin" inputmode="numeric" maxlength="8" placeholder="cth: 135790"></div>
+      </div>
       <button class="btn" onclick="saveDokter()">Simpan Dokter</button>
       <button class="btn" style="background:#94a3b8" onclick="resetDokterForm()">Form Baru</button>
     </div>
     <div class="card">
       <h3>Daftar Dokter</h3>
       <div class="scroll-x"><table>
-        <thead><tr><th>Nama</th><th>Kategori</th><th>Jabatan</th><th>Status</th><th>Wajah</th><th></th></tr></thead>
+        <thead><tr><th>Nama</th><th>Kategori</th><th>Jabatan</th><th>Status</th><th>PIN</th><th></th></tr></thead>
         <tbody id="dokterBody"></tbody>
       </table></div>
     </div>
@@ -236,7 +239,7 @@
 </div>
 
 <script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbwGZT6va5MWcAmrcFVk1SUAUklRcknCE4tVWrZS8mlU20OuOtZDGR06jY6zK2grZ-P97Q/exec';
+const API_URL = 'PASTE_URL_WEBAPP_APPS_SCRIPT_DISINI';
 let AKTOR = 'Admin';
 let AKTOR_ROLE = 'Admin';
 let dokterCache = [];
@@ -300,7 +303,7 @@ async function loadDokter() {
   document.getElementById('dokterBody').innerHTML = j.data.map(d => `
     <tr>
       <td>${d.Nama}</td><td>${tagHtml(d.Kategori_Default)}</td><td>${d.Jabatan_Manajerial || '-'}</td>
-      <td>${d.Status}</td><td>${d.Punya_Face ? '✅' : '❌ belum'}</td>
+      <td>${d.Status}</td><td>${d.PIN_Absen ? '✅ diset' : '❌ belum'}</td>
       <td>
         <button class="btn sm" onclick='editDokter(${JSON.stringify(d).replace(/'/g,"&apos;")})'>Edit</button>
         <button class="btn sm bad" onclick="deleteDokter('${d.ID_Dokter}')">Hapus</button>
@@ -319,9 +322,10 @@ function editDokter(d) {
   document.getElementById('dkSip').value = d.SIP || '';
   document.getElementById('dkHp').value = d.No_HP || '';
   document.getElementById('dkStatus').value = d.Status || 'Aktif';
+  document.getElementById('dkPin').value = d.PIN_Absen || '';
 }
 function resetDokterForm() {
-  ['dkId','dkNama','dkJabatan','dkSip','dkHp'].forEach(id => document.getElementById(id).value = '');
+  ['dkId','dkNama','dkJabatan','dkSip','dkHp','dkPin'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('dkKategori').value = 'IGD';
   document.getElementById('dkStatus').value = 'Aktif';
 }
@@ -333,7 +337,8 @@ async function saveDokter() {
     Jabatan_Manajerial: document.getElementById('dkJabatan').value,
     SIP: document.getElementById('dkSip').value,
     No_HP: document.getElementById('dkHp').value,
-    Status: document.getElementById('dkStatus').value
+    Status: document.getElementById('dkStatus').value,
+    PIN_Absen: document.getElementById('dkPin').value
   };
   if (!data.Nama) return alert('Nama wajib diisi');
   const j = await api('saveDokter', { data });
