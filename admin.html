@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin - SIABSEN Dokter</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{--pri:#0d6efd;--ok:#198754;--bad:#dc3545;--bg:#f1f5f9;}
   *{box-sizing:border-box;}
@@ -121,7 +122,11 @@
         <div class="field"><label>Target Hari Praktik GF/Bulan (jika dokter Spesialis GF)</label><input type="number" id="dkTargetGF" placeholder="cth: 20"></div>
         <div class="field"><label>Nominal Guarantee Fee/Bulan (Rp)</label><input type="number" id="dkNominalGF" placeholder="cth: 10000000"></div>
       </div>
-      <p class="muted">Dua kolom di atas hanya dipakai untuk dokter yang absen dengan status "Spesialis (GF)". Nominal per kedatangan otomatis = Nominal GF/Bulan ÷ Target Hari, dan kalau kedatangan sebulan kurang dari target, total yang terbayar otomatis lebih kecil dari GF penuh.</p>
+      <div class="row">
+        <div class="field"><label>Jam Mulai Praktik GF (opsional)</label><input type="time" id="dkJamPraktikGF"></div>
+        <div class="field"><label>Durasi Praktik GF (menit, opsional)</label><input type="number" id="dkDurasiPraktikGF" placeholder="cth: 120"></div>
+      </div>
+      <p class="muted">Empat kolom di atas hanya dipakai untuk dokter yang absen dengan status "Spesialis (GF)". Nominal per kedatangan otomatis = Nominal GF/Bulan ÷ Target Hari, dan kalau kedatangan sebulan kurang dari target, total yang terbayar otomatis lebih kecil dari GF penuh. Kalau Jam Mulai Praktik &amp; Durasi Praktik diisi, honor per kedatangan JUGA otomatis dipotong kalau dokter datang telat melebihi toleransi (Tab Lokasi GPS) dari jam mulai praktik — dihitung proporsional seperti potongan telat shift. Kosongkan keduanya kalau tidak ingin ada potongan telat untuk dokter ini.</p>
       <div class="row">
         <div class="field"><label>PIN Absen (4-8 digit)</label><input id="dkPin" inputmode="numeric" maxlength="8" placeholder="cth: 135790"></div>
       </div>
@@ -215,6 +220,7 @@
       <div class="row">
         <div class="field"><label>Bulan</label><input type="month" id="rkBulan"></div>
         <button class="btn" onclick="loadRekap()">Tampilkan</button>
+        <button class="btn" style="background:#166534" onclick="unduhRekapHonorExcel()">📥 Unduh Excel (untuk Direksi)</button>
       </div>
       <div class="scroll-x"><table>
         <thead><tr><th>Nama</th><th>Kategori</th><th>Jumlah Shift/Sesi</th><th>Total Jam (Manajerial)</th><th>Total Honor</th></tr></thead>
@@ -232,6 +238,7 @@
         <div class="field"><label>Dari</label><input type="date" id="abDari" onchange="loadAbsensiRange()"></div>
         <div class="field"><label>Sampai</label><input type="date" id="abSampai" onchange="loadAbsensiRange()"></div>
         <button class="btn" onclick="loadAbsensiRange()">Cari</button>
+        <button class="btn" style="background:#166534" onclick="unduhRiwayatExcel()">📥 Unduh Excel (untuk Direksi)</button>
       </div>
       <div class="scroll-x"><table>
         <thead><tr><th>Tgl</th><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Foto Masuk</th><th>Keluar</th><th>Foto Keluar</th><th>Nominal</th><th>Status</th><th></th></tr></thead>
@@ -384,11 +391,13 @@ function editDokter(d) {
   document.getElementById('dkStatus').value = d.Status || 'Aktif';
   document.getElementById('dkTargetGF').value = d.Target_Hari_GF || '';
   document.getElementById('dkNominalGF').value = d.Nominal_GF_Bulanan || '';
+  document.getElementById('dkJamPraktikGF').value = d.Jam_Praktik_GF || '';
+  document.getElementById('dkDurasiPraktikGF').value = d.Durasi_Praktik_GF_Menit || '';
   document.getElementById('dkPin').value = '';
   document.getElementById('dkPin').placeholder = d.PIN_Absen_Set ? 'Sudah diset — isi hanya jika ingin ganti' : 'Belum diset';
 }
 function resetDokterForm() {
-  ['dkId','dkNama','dkJabatan','dkSip','dkHp','dkPin','dkTargetGF','dkNominalGF'].forEach(id => document.getElementById(id).value = '');
+  ['dkId','dkNama','dkJabatan','dkSip','dkHp','dkPin','dkTargetGF','dkNominalGF','dkJamPraktikGF','dkDurasiPraktikGF'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('dkKategori').value = 'IGD';
   document.getElementById('dkStatus').value = 'Aktif';
   document.getElementById('dkPin').placeholder = '';
@@ -403,7 +412,9 @@ async function saveDokter() {
     No_HP: document.getElementById('dkHp').value,
     Status: document.getElementById('dkStatus').value,
     Target_Hari_GF: document.getElementById('dkTargetGF').value,
-    Nominal_GF_Bulanan: document.getElementById('dkNominalGF').value
+    Nominal_GF_Bulanan: document.getElementById('dkNominalGF').value,
+    Jam_Praktik_GF: document.getElementById('dkJamPraktikGF').value,
+    Durasi_Praktik_GF_Menit: document.getElementById('dkDurasiPraktikGF').value
   };
   // PIN tidak pernah ditampilkan kembali dari server (demi keamanan), jadi kolom PIN
   // di form ini selalu kosong saat mode Edit. Hanya kirim PIN_Absen kalau admin benar-benar
@@ -550,11 +561,15 @@ async function saveShiftConfig() {
 }
 
 /* ===== REKAP ===== */
+let rekapCache = [];
+let rekapBulanCache = '';
 async function loadRekap() {
   const bulan = document.getElementById('rkBulan').value;
   if (!bulan) return alert('Pilih bulan');
   const j = await api('getRekapHonor', { bulan });
   if (!j.ok) return alert(j.error);
+  rekapCache = j.data;
+  rekapBulanCache = bulan;
   document.getElementById('rekapBody').innerHTML = j.data.map(r => `
     <tr><td>${r.nama}</td><td>${tagHtml(r.kategori)}</td><td>${r.jumlah_shift}</td>
     <td>${r.kategori === 'Manajerial' ? r.total_jam.toFixed(2) : '-'}</td><td>${fmtRp(r.total_nominal)}</td></tr>
@@ -562,13 +577,30 @@ async function loadRekap() {
   const total = j.data.reduce((a, b) => a + b.total_nominal, 0);
   document.getElementById('rekapTotal').textContent = 'Total seluruh dokter: ' + fmtRp(total);
 }
+function unduhRekapHonorExcel() {
+  if (!rekapCache.length) return alert('Tampilkan rekap bulan yang diinginkan terlebih dahulu (klik Tampilkan).');
+  const rows = rekapCache.map(r => ({
+    'Nama Dokter': r.nama,
+    'Kategori': r.kategori,
+    'Jumlah Shift/Sesi': r.jumlah_shift,
+    'Total Jam (Manajerial)': r.kategori === 'Manajerial' ? Number(r.total_jam.toFixed(2)) : '-',
+    'Total Honor (Rp)': r.total_nominal
+  }));
+  const totalHonor = rekapCache.reduce((a, b) => a + b.total_nominal, 0);
+  rows.push({});
+  rows.push({ 'Nama Dokter': 'TOTAL SELURUH DOKTER', 'Total Honor (Rp)': totalHonor });
+  unduhExcel(rows, 'Rekap Honor Bulanan — RSU Allam Medica (' + rekapBulanCache + ')',
+    'Rekap_Honor_Dokter_' + rekapBulanCache);
+}
 
 /* ===== RIWAYAT ABSENSI ===== */
+let absensiRangeCache = [];
 async function loadAbsensiRange() {
   const dari = document.getElementById('abDari').value;
   const sampai = document.getElementById('abSampai').value;
   const j = await api('getAbsensiRange', { dari, sampai });
   if (!j.ok) return;
+  absensiRangeCache = j.data;
   document.getElementById('absensiBody').innerHTML = j.data.map(r => `
     <tr><td>${r.Tanggal}</td><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td><td>${r.Shift_Terdeteksi}</td>
     <td>${r.Jam_Masuk}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
@@ -576,6 +608,39 @@ async function loadAbsensiRange() {
     <td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;">${r.Keterangan}</span>` : ''}</td><td>${r.Status_Nominal}</td>
     <td><button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button></td></tr>
   `).join('') || '<tr><td colspan="11" class="muted">Tidak ada data</td></tr>';
+}
+function unduhRiwayatExcel() {
+  if (!absensiRangeCache.length) return alert('Tidak ada data pada rentang tanggal ini untuk diunduh.');
+  const dari = document.getElementById('abDari').value;
+  const sampai = document.getElementById('abSampai').value;
+  const rows = absensiRangeCache.map(r => ({
+    'Tanggal': r.Tanggal,
+    'Nama Dokter': r.Nama_Dokter,
+    'Kategori': r.Kategori,
+    'Shift': r.Shift_Terdeteksi,
+    'Jam Masuk': r.Jam_Masuk,
+    'Jam Keluar': r.Jam_Keluar,
+    'Durasi (Jam)': r.Durasi_Jam || '',
+    'Nominal (Rp)': Number(r.Nominal) || 0,
+    'Status Nominal': r.Status_Nominal,
+    'Keterangan': r.Keterangan || ''
+  }));
+  const totalNominal = absensiRangeCache.reduce((a, b) => a + (Number(b.Nominal) || 0), 0);
+  rows.push({});
+  rows.push({ 'Tanggal': 'TOTAL', 'Nominal (Rp)': totalNominal });
+  unduhExcel(rows, 'Riwayat Absensi Dokter — RSU Allam Medica (' + dari + ' s/d ' + sampai + ')',
+    'Riwayat_Absensi_' + dari + '_sd_' + sampai);
+}
+
+// Helper umum: bangun file .xlsx dari array of objects, dengan baris judul di atas tabel,
+// lalu langsung diunduh ke perangkat. Dipakai untuk laporan yang siap dicetak/dikirim ke direksi.
+function unduhExcel(rows, judul, namaFile) {
+  if (typeof XLSX === 'undefined') return alert('Gagal memuat pustaka Excel. Cek koneksi internet lalu coba lagi.');
+  const ws = XLSX.utils.json_to_sheet(rows, { origin: 'A3' });
+  XLSX.utils.sheet_add_aoa(ws, [[judul], ['Diunduh: ' + new Date().toLocaleString('id-ID')]], { origin: 'A1' });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Rekap');
+  XLSX.writeFile(wb, namaFile + '.xlsx');
 }
 async function koreksi(r) {
   const nominalBaru = prompt('Koreksi nominal untuk ' + r.Nama_Dokter + ' (' + r.Tanggal + '):', r.Nominal);
