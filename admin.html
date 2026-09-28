@@ -104,7 +104,7 @@
         </div>
         <div class="field"><label>Jabatan Manajerial (jika ada)</label><input id="dkJabatan" placeholder="cth: Wadir Umum & Keuangan"></div>
       </div>
-      <p class="muted" id="dkGandaHint" style="display:none;">Dokter berstatus <b>Manajerial &amp; Fungsional</b> akan diminta memilih sendiri perannya (IGD/Bangsal/Manajerial) setiap kali absen di absen.html — jadwal di tab Jadwal Jaga bersifat opsional, hanya dipakai kalau memang sudah diisi untuk hari itu.</p>
+      <p class="muted">Kategori Default di sini hanya jadi pilihan yang otomatis tersorot saat dokter absen — setiap absen masuk, dokter tetap memilih sendiri status jaga hari itu (IGD/Bangsal/Manajerial/Manajerial &amp; Fungsional) di absen.html, supaya rekap honor selalu sesuai kriteria jaga hari itu, bukan asumsi tetap.</p>
       <div class="row">
         <div class="field"><label>SIP</label><input id="dkSip"></div>
         <div class="field"><label>No. HP</label><input id="dkHp"></div>
@@ -129,11 +129,11 @@
   <div class="tab" id="tab-jadwal">
     <div class="card">
       <h3>Tambah Jadwal Jaga</h3>
-      <p class="muted">Jadwal di sini bersifat opsional — kalau diisi untuk hari tertentu, sistem memakai kategori dari jadwal ini. Untuk dokter berstatus <b>Manajerial &amp; Fungsional</b> yang tidak ada jadwalnya hari itu, dia akan memilih sendiri perannya saat absen.</p>
+      <p class="muted">Jadwal di sini murni untuk perencanaan/referensi — tidak lagi memengaruhi kategori atau honor saat absen. Status jaga dan tarif yang dipakai selalu berdasarkan pilihan dokter sendiri saat absen masuk.</p>
       <div class="row">
         <div class="field"><label>Tanggal</label><input type="date" id="jdTanggal"></div>
         <div class="field"><label>Dokter</label><select id="jdDokter"></select></div>
-        <div class="field"><label>Kategori Sesi Ini</label><select id="jdKategori"><option>IGD</option><option>Bangsal</option><option>Manajerial</option></select></div>
+        <div class="field"><label>Kategori Sesi Ini</label><select id="jdKategori"><option>IGD</option><option>Bangsal</option><option>Manajerial</option><option>Manajerial & Fungsional</option></select></div>
       </div>
       <div class="row">
         <div class="field"><label>Rencana Jam Mulai</label><input type="time" id="jdJamMulai"></div>
@@ -153,9 +153,9 @@
   <!-- TARIF -->
   <div class="tab" id="tab-tarif">
     <div class="card">
-      <h3>Tarif per Shift (IGD / Bangsal)</h3>
+      <h3>Tarif per Shift (IGD / Bangsal / Manajerial &amp; Fungsional)</h3>
       <div class="row">
-        <div class="field"><label>Kategori</label><select id="tsKategori"><option>IGD</option><option>Bangsal</option></select></div>
+        <div class="field"><label>Kategori</label><select id="tsKategori"><option>IGD</option><option>Bangsal</option><option>Manajerial & Fungsional</option></select></div>
         <div class="field"><label>Shift</label><select id="tsShift"><option>Pagi</option><option>Siang</option><option>Malam</option></select></div>
         <div class="field"><label>Nominal (Rp)</label><input type="number" id="tsNominal"></div>
         <div class="field"><label>Berlaku Mulai</label><input type="date" id="tsBerlaku"></div>
@@ -334,7 +334,7 @@ async function loadDokter() {
   document.getElementById('dokterBody').innerHTML = j.data.map(d => `
     <tr>
       <td>${d.Nama}</td><td>${tagHtml(d.Kategori_Default)}</td><td>${d.Jabatan_Manajerial || '-'}</td>
-      <td>${d.Status}</td><td>${d.PIN_Absen ? '✅ diset' : '❌ belum'}</td>
+      <td>${d.Status}</td><td>${d.PIN_Absen_Set ? '✅ diset' : '❌ belum'}</td>
       <td>
         <button class="btn sm" onclick='editDokter(${JSON.stringify(d).replace(/'/g,"&apos;")})'>Edit</button>
         <button class="btn sm bad" onclick="deleteDokter('${d.ID_Dokter}')">Hapus</button>
@@ -353,20 +353,15 @@ function editDokter(d) {
   document.getElementById('dkSip').value = d.SIP || '';
   document.getElementById('dkHp').value = d.No_HP || '';
   document.getElementById('dkStatus').value = d.Status || 'Aktif';
-  document.getElementById('dkPin').value = d.PIN_Absen || '';
-  updateDkGandaHint();
+  document.getElementById('dkPin').value = '';
+  document.getElementById('dkPin').placeholder = d.PIN_Absen_Set ? 'Sudah diset — isi hanya jika ingin ganti' : 'Belum diset';
 }
 function resetDokterForm() {
   ['dkId','dkNama','dkJabatan','dkSip','dkHp','dkPin'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('dkKategori').value = 'IGD';
   document.getElementById('dkStatus').value = 'Aktif';
-  updateDkGandaHint();
+  document.getElementById('dkPin').placeholder = '';
 }
-function updateDkGandaHint() {
-  const isGanda = document.getElementById('dkKategori').value === 'Manajerial & Fungsional';
-  document.getElementById('dkGandaHint').style.display = isGanda ? 'block' : 'none';
-}
-document.getElementById('dkKategori').addEventListener('change', updateDkGandaHint);
 async function saveDokter() {
   const data = {
     ID_Dokter: document.getElementById('dkId').value,
@@ -375,9 +370,13 @@ async function saveDokter() {
     Jabatan_Manajerial: document.getElementById('dkJabatan').value,
     SIP: document.getElementById('dkSip').value,
     No_HP: document.getElementById('dkHp').value,
-    Status: document.getElementById('dkStatus').value,
-    PIN_Absen: document.getElementById('dkPin').value
+    Status: document.getElementById('dkStatus').value
   };
+  // PIN tidak pernah ditampilkan kembali dari server (demi keamanan), jadi kolom PIN
+  // di form ini selalu kosong saat mode Edit. Hanya kirim PIN_Absen kalau admin benar-benar
+  // mengetik nilai baru — supaya PIN yang sudah ada di sheet tidak tertimpa kosong tanpa sengaja.
+  const pinInput = document.getElementById('dkPin').value.trim();
+  if (pinInput !== '') data.PIN_Absen = pinInput;
   if (!data.Nama) return alert('Nama wajib diisi');
   const j = await api('saveDokter', { data });
   if (j.ok) { resetDokterForm(); loadDokter(); } else alert(j.error);
