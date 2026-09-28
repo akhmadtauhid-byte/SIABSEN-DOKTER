@@ -25,6 +25,7 @@
   .dot.bad{background:var(--bad);}
   button{width:100%;padding:16px;border:none;border-radius:10px;background:var(--pri);color:#fff;font-weight:700;font-size:1.05rem;cursor:pointer;}
   button:disabled{background:#94a3b8;cursor:not-allowed;}
+  .muted{color:#64748b;}
   .msg{margin-top:14px;padding:14px;border-radius:10px;font-size:.9rem;text-align:center;display:none;white-space:pre-line;}
   .msg.show{display:block;}
   .msg.ok{background:#dcfce7;color:#166534;}
@@ -73,7 +74,11 @@
     <div class="status-row"><span class="dot" id="dotCam"></span><span id="statCam">Menyiapkan kamera...</span></div>
     <div class="status-row"><span class="dot" id="dotGps"></span><span id="statGps">Mencari lokasi GPS...</span></div>
 
-    <button id="btnAbsen" onclick="absen()" disabled>Absen Masuk / Keluar</button>
+    <div style="display:flex;gap:10px;">
+      <button id="btnAbsenMasuk" onclick="absen('masuk')" disabled style="background:var(--ok);">✅ Absen Masuk</button>
+      <button id="btnAbsenKeluar" onclick="absen('keluar')" disabled style="background:var(--bad);">🚪 Absen Keluar</button>
+    </div>
+    <p class="muted" style="font-size:.75rem;text-align:center;margin-top:8px;">Pilih Absen Masuk kalau baru mulai jaga hari ini, atau Absen Keluar kalau mengakhiri jaga yang sedang berjalan.</p>
 
     <div class="msg" id="msg"></div>
   </div>
@@ -103,7 +108,10 @@ let dokterKategoriMap = {};
 function updateBtnState() {
   const idDokter = document.getElementById('selDokter').value;
   const peranOk = document.getElementById('selPeran').value;
-  document.getElementById('btnAbsen').disabled = !(idDokter && camReady && peranOk);
+  const dasarOk = idDokter && camReady;
+  // Absen Keluar tidak butuh pilihan status jaga (peran ikut yang sudah tercatat saat masuk)
+  document.getElementById('btnAbsenMasuk').disabled = !(dasarOk && peranOk);
+  document.getElementById('btnAbsenKeluar').disabled = !dasarOk;
 }
 
 /* ===== Kamera (hanya ambil foto, tanpa AI/model — tidak butuh CDN eksternal) ===== */
@@ -210,24 +218,26 @@ document.getElementById('selDokter').addEventListener('change', () => {
 document.getElementById('selPeran').addEventListener('change', updateBtnState);
 
 /* ===== Absen ===== */
-async function absen() {
+// mode: 'masuk' atau 'keluar' — dua tombol terpisah supaya dokter tidak salah pencet,
+// server tetap memvalidasi ulang (kalau mode tidak cocok status sesi, akan ditolak dengan pesan jelas).
+async function absen(mode) {
   const idDokter = document.getElementById('selDokter').value;
   const pin = document.getElementById('pin').value;
   const peran = document.getElementById('selPeran').value;
   if (!idDokter) return setMsg('Pilih nama dokter dahulu', 'bad');
-  if (!peran) return setMsg('Pilih dulu status jaga hari ini (IGD/Bangsal/Manajerial/Manajerial & Fungsional)', 'bad');
+  if (mode === 'masuk' && !peran) return setMsg('Pilih dulu status jaga hari ini (IGD/Bangsal/Poli Umum/Manajerial/Manajerial & Fungsional/Spesialis GF)', 'bad');
   if (!pin) return setMsg('Masukkan PIN', 'bad');
   if (!camReady) return setMsg('Kamera belum siap', 'bad');
   if (currentLat === null || currentLon === null) return setMsg('Lokasi GPS belum terkunci, tunggu sebentar', 'bad');
 
-  const btn = document.getElementById('btnAbsen');
-  btn.disabled = true;
-  setMsg('Memproses...', '');
+  document.getElementById('btnAbsenMasuk').disabled = true;
+  document.getElementById('btnAbsenKeluar').disabled = true;
+  setMsg('Memproses ' + (mode === 'masuk' ? 'Absen Masuk' : 'Absen Keluar') + '...', '');
 
   const fotoBase64 = capturePhoto();
 
   try {
-    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 });
+    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran, mode, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 });
     if (j.ok) {
       const label = j.mode === 'masuk' ? 'ABSEN MASUK' : 'ABSEN KELUAR';
       let detail = `${label} berhasil — ${j.nama}\n${j.kategori} / ${j.shift}\nJam: ${j.jam}`;
