@@ -54,6 +54,7 @@
         <option value="">-- Pilih status jaga --</option>
         <option value="IGD">IGD</option>
         <option value="Bangsal">Bangsal</option>
+        <option value="Poli Umum">Poli Umum</option>
         <option value="Manajerial">Manajerial</option>
         <option value="Manajerial & Fungsional">Manajerial &amp; Fungsional</option>
       </select>
@@ -232,7 +233,8 @@ async function absen() {
       if (j.mode === 'keluar') detail += `\nDurasi: ${j.durasi_jam} jam`;
       detail += `\nJarak dari RS: ${j.jarak_meter} m`;
       detail += `\nNominal: Rp ${Number(j.nominal || 0).toLocaleString('id-ID')}`;
-      setMsg(detail, 'ok');
+      if (j.keterangan) detail += `\n⚠️ ${j.keterangan}`;
+      setMsg(detail, j.telat_menit > 0 ? 'bad' : 'ok');
       document.getElementById('pin').value = '';
       document.getElementById('selPeran').value = '';
     } else {
