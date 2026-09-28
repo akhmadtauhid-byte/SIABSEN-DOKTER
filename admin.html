@@ -674,16 +674,8 @@ function initApp() {
 function doLogout() {
   if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
   AKTOR = null; AKTOR_ROLE = null;
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('loginScreen').style.display = 'block';
-  document.getElementById('pinInput').value = '';
-  document.getElementById('loginMsg').textContent = '';
-  document.getElementById('navGps').style.display = 'none';
-  document.getElementById('navAkun').style.display = 'none';
-  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelector('nav button[data-tab="monitor"]').classList.add('active');
-  document.getElementById('tab-monitor').classList.add('active');
+  // Keluar langsung kembali ke tampilan awal sistem (index.html), bukan cuma ke layar login admin.
+  window.location.href = 'index.html';
 }
 </script>
 </body>
