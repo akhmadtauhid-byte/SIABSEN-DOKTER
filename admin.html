@@ -40,6 +40,7 @@
   .tag.IGD{background:#fee2e2;color:#991b1b;}
   .tag.Bangsal{background:#dbeafe;color:#1e40af;}
   .tag.Poli-Umum{background:#dcfce7;color:#166534;}
+  .tag.Spesialis-GF{background:#e0e7ff;color:#3730a3;}
   .tag.Manajerial{background:#ede9fe;color:#5b21b6;}
   .tag.Manajerial---Fungsional{background:#fef3c7;color:#92400e;}
   .muted{color:#94a3b8;font-size:.78rem;}
@@ -105,16 +106,22 @@
             <option>Poli Umum</option>
             <option>Manajerial</option>
             <option>Manajerial & Fungsional</option>
+            <option>Spesialis (GF)</option>
           </select>
         </div>
         <div class="field"><label>Jabatan Manajerial (jika ada)</label><input id="dkJabatan" placeholder="cth: Wadir Umum & Keuangan"></div>
       </div>
-      <p class="muted">Kategori Default di sini hanya jadi pilihan yang otomatis tersorot saat dokter absen — setiap absen masuk, dokter tetap memilih sendiri status jaga hari itu (IGD/Bangsal/Manajerial/Manajerial &amp; Fungsional) di absen.html, supaya rekap honor selalu sesuai kriteria jaga hari itu, bukan asumsi tetap.</p>
+      <p class="muted">Kategori Default di sini hanya jadi pilihan yang otomatis tersorot saat dokter absen — setiap absen masuk, dokter tetap memilih sendiri status jaga hari itu (IGD/Bangsal/Poli Umum/Manajerial/Manajerial &amp; Fungsional/Spesialis GF) di absen.html, supaya rekap honor selalu sesuai kriteria jaga hari itu, bukan asumsi tetap.</p>
       <div class="row">
         <div class="field"><label>SIP</label><input id="dkSip"></div>
         <div class="field"><label>No. HP</label><input id="dkHp"></div>
         <div class="field"><label>Status</label><select id="dkStatus"><option>Aktif</option><option>Nonaktif</option></select></div>
       </div>
+      <div class="row">
+        <div class="field"><label>Target Hari Praktik GF/Bulan (jika dokter Spesialis GF)</label><input type="number" id="dkTargetGF" placeholder="cth: 20"></div>
+        <div class="field"><label>Nominal Guarantee Fee/Bulan (Rp)</label><input type="number" id="dkNominalGF" placeholder="cth: 10000000"></div>
+      </div>
+      <p class="muted">Dua kolom di atas hanya dipakai untuk dokter yang absen dengan status "Spesialis (GF)". Nominal per kedatangan otomatis = Nominal GF/Bulan ÷ Target Hari, dan kalau kedatangan sebulan kurang dari target, total yang terbayar otomatis lebih kecil dari GF penuh.</p>
       <div class="row">
         <div class="field"><label>PIN Absen (4-8 digit)</label><input id="dkPin" inputmode="numeric" maxlength="8" placeholder="cth: 135790"></div>
       </div>
@@ -138,7 +145,7 @@
       <div class="row">
         <div class="field"><label>Tanggal</label><input type="date" id="jdTanggal"></div>
         <div class="field"><label>Dokter</label><select id="jdDokter"></select></div>
-        <div class="field"><label>Kategori Sesi Ini</label><select id="jdKategori"><option>IGD</option><option>Bangsal</option><option>Poli Umum</option><option>Manajerial</option><option>Manajerial & Fungsional</option></select></div>
+        <div class="field"><label>Kategori Sesi Ini</label><select id="jdKategori"><option>IGD</option><option>Bangsal</option><option>Poli Umum</option><option>Manajerial</option><option>Manajerial & Fungsional</option><option>Spesialis (GF)</option></select></div>
       </div>
       <div class="row">
         <div class="field"><label>Rencana Jam Mulai</label><input type="time" id="jdJamMulai"></div>
@@ -332,7 +339,7 @@ function fmtRp(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fotoLink(url) {
   return url ? `<a href="${url}" target="_blank" rel="noopener">📷 Lihat</a>` : '<span class="muted">-</span>';
 }
-function tagClass(kat) { return String(kat || '').replace(/\s*&\s*/g, '---').replace(/\s+/g, '-'); }
+function tagClass(kat) { return String(kat || '').replace(/\s*&\s*/g, '---').replace(/[()]/g, '').replace(/\s+/g, '-'); }
 function tagHtml(kat) { return `<span class="tag ${tagClass(kat)}">${kat}</span>`; }
 
 /* ===== MONITORING ===== */
@@ -375,11 +382,13 @@ function editDokter(d) {
   document.getElementById('dkSip').value = d.SIP || '';
   document.getElementById('dkHp').value = d.No_HP || '';
   document.getElementById('dkStatus').value = d.Status || 'Aktif';
+  document.getElementById('dkTargetGF').value = d.Target_Hari_GF || '';
+  document.getElementById('dkNominalGF').value = d.Nominal_GF_Bulanan || '';
   document.getElementById('dkPin').value = '';
   document.getElementById('dkPin').placeholder = d.PIN_Absen_Set ? 'Sudah diset — isi hanya jika ingin ganti' : 'Belum diset';
 }
 function resetDokterForm() {
-  ['dkId','dkNama','dkJabatan','dkSip','dkHp','dkPin'].forEach(id => document.getElementById(id).value = '');
+  ['dkId','dkNama','dkJabatan','dkSip','dkHp','dkPin','dkTargetGF','dkNominalGF'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('dkKategori').value = 'IGD';
   document.getElementById('dkStatus').value = 'Aktif';
   document.getElementById('dkPin').placeholder = '';
@@ -392,7 +401,9 @@ async function saveDokter() {
     Jabatan_Manajerial: document.getElementById('dkJabatan').value,
     SIP: document.getElementById('dkSip').value,
     No_HP: document.getElementById('dkHp').value,
-    Status: document.getElementById('dkStatus').value
+    Status: document.getElementById('dkStatus').value,
+    Target_Hari_GF: document.getElementById('dkTargetGF').value,
+    Nominal_GF_Bulanan: document.getElementById('dkNominalGF').value
   };
   // PIN tidak pernah ditampilkan kembali dari server (demi keamanan), jadi kolom PIN
   // di form ini selalu kosong saat mode Edit. Hanya kirim PIN_Absen kalau admin benar-benar
