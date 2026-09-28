@@ -85,7 +85,7 @@
     <div class="card">
       <h3><span class="badge-live"></span>Absensi Hari Ini — <span id="monTanggal"></span></h3>
       <div class="scroll-x"><table>
-        <thead><tr><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Keluar</th><th>Durasi</th><th>Nominal</th></tr></thead>
+        <thead><tr><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Foto Masuk</th><th>Keluar</th><th>Foto Keluar</th><th>Durasi</th><th>Nominal</th></tr></thead>
         <tbody id="monBody"></tbody>
       </table></div>
     </div>
@@ -227,7 +227,7 @@
         <button class="btn" onclick="loadAbsensiRange()">Cari</button>
       </div>
       <div class="scroll-x"><table>
-        <thead><tr><th>Tgl</th><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Keluar</th><th>Nominal</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Tgl</th><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Foto Masuk</th><th>Keluar</th><th>Foto Keluar</th><th>Nominal</th><th>Status</th><th></th></tr></thead>
         <tbody id="absensiBody"></tbody>
       </table></div>
     </div>
@@ -329,6 +329,9 @@ document.querySelectorAll('nav button').forEach(btn => {
 });
 
 function fmtRp(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function fotoLink(url) {
+  return url ? `<a href="${url}" target="_blank" rel="noopener">📷 Lihat</a>` : '<span class="muted">-</span>';
+}
 function tagClass(kat) { return String(kat || '').replace(/\s*&\s*/g, '---').replace(/\s+/g, '-'); }
 function tagHtml(kat) { return `<span class="tag ${tagClass(kat)}">${kat}</span>`; }
 
@@ -339,9 +342,10 @@ async function loadMonitor() {
   document.getElementById('monTanggal').textContent = j.tanggal;
   document.getElementById('monBody').innerHTML = j.data.map(r => `
     <tr><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td><td>${r.Shift_Terdeteksi}</td>
-    <td>${r.Jam_Masuk}</td><td>${r.Jam_Keluar || '<span class="muted">belum keluar</span>'}</td>
+    <td>${r.Jam_Masuk}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
+    <td>${r.Jam_Keluar || '<span class="muted">belum keluar</span>'}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
     <td>${r.Durasi_Jam || '-'}</td><td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;">${r.Keterangan}</span>` : ''}</td></tr>
-  `).join('') || '<tr><td colspan="7" class="muted">Belum ada absensi hari ini</td></tr>';
+  `).join('') || '<tr><td colspan="9" class="muted">Belum ada absensi hari ini</td></tr>';
 }
 
 /* ===== DOKTER ===== */
@@ -556,9 +560,11 @@ async function loadAbsensiRange() {
   if (!j.ok) return;
   document.getElementById('absensiBody').innerHTML = j.data.map(r => `
     <tr><td>${r.Tanggal}</td><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td><td>${r.Shift_Terdeteksi}</td>
-    <td>${r.Jam_Masuk}</td><td>${r.Jam_Keluar}</td><td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;">${r.Keterangan}</span>` : ''}</td><td>${r.Status_Nominal}</td>
+    <td>${r.Jam_Masuk}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
+    <td>${r.Jam_Keluar}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
+    <td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;">${r.Keterangan}</span>` : ''}</td><td>${r.Status_Nominal}</td>
     <td><button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button></td></tr>
-  `).join('') || '<tr><td colspan="9" class="muted">Tidak ada data</td></tr>';
+  `).join('') || '<tr><td colspan="11" class="muted">Tidak ada data</td></tr>';
 }
 async function koreksi(r) {
   const nominalBaru = prompt('Koreksi nominal untuk ' + r.Nama_Dokter + ' (' + r.Tanggal + '):', r.Nominal);
