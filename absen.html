@@ -37,21 +37,25 @@
 
 <header>
   <h1>🩺 Absensi Dokter Jaga</h1>
-  <p>Pilih nama, masukkan PIN, pastikan wajah &amp; lokasi terverifikasi</p>
+  <p>Pilih nama, pilih status jaga hari ini, masukkan PIN, pastikan foto &amp; lokasi terverifikasi</p>
 </header>
 
 <div class="wrap">
   <div class="card">
+    <label>Cari Nama Dokter</label>
+    <input type="text" id="cariDokter" placeholder="Ketik nama untuk mencari..." autocomplete="off" style="margin-bottom:10px;">
+
     <label>Pilih Dokter</label>
     <select id="selDokter"><option value="">Memuat daftar dokter...</option></select>
 
-    <div id="peranBox" style="display:none;">
-      <label>Absen sebagai (peran hari ini)</label>
+    <div id="peranBox">
+      <label>Status Jaga Hari Ini</label>
       <select id="selPeran">
-        <option value="">-- Pilih peran --</option>
+        <option value="">-- Pilih status jaga --</option>
         <option value="IGD">IGD</option>
         <option value="Bangsal">Bangsal</option>
         <option value="Manajerial">Manajerial</option>
+        <option value="Manajerial & Fungsional">Manajerial &amp; Fungsional</option>
       </select>
     </div>
 
@@ -93,13 +97,10 @@ function setMsg(text, cls) {
 }
 
 let dokterKategoriMap = {};
-const KATEGORI_GANDA = 'Manajerial & Fungsional';
 
 function updateBtnState() {
   const idDokter = document.getElementById('selDokter').value;
-  const isGanda = idDokter && dokterKategoriMap[idDokter] === KATEGORI_GANDA;
-  document.getElementById('peranBox').style.display = isGanda ? 'block' : 'none';
-  const peranOk = !isGanda || document.getElementById('selPeran').value;
+  const peranOk = document.getElementById('selPeran').value;
   document.getElementById('btnAbsen').disabled = !(idDokter && camReady && peranOk);
 }
 
@@ -151,16 +152,41 @@ function startGps() {
 }
 
 /* ===== Dokter list ===== */
+let dokterListFull = [];
+
+function renderDokterOptions(list, keepSelected) {
+  const sel = document.getElementById('selDokter');
+  const prevValue = keepSelected ? sel.value : '';
+  if (list.length) {
+    sel.innerHTML = '<option value="">-- Pilih nama --</option>' +
+      list.map(d => `<option value="${d.id}">${d.nama} (${d.kategori})</option>`).join('');
+  } else {
+    sel.innerHTML = '<option value="">Tidak ditemukan</option>';
+  }
+  // pertahankan dokter yang sudah dipilih kalau masih ada di hasil filter
+  if (prevValue && list.some(d => d.id === prevValue)) {
+    sel.value = prevValue;
+  }
+}
+
+function filterDokter() {
+  const q = document.getElementById('cariDokter').value.trim().toLowerCase();
+  const filtered = q ? dokterListFull.filter(d => d.nama.toLowerCase().includes(q)) : dokterListFull;
+  renderDokterOptions(filtered, true);
+  updateBtnState();
+}
+
 async function loadDokterList() {
   const sel = document.getElementById('selDokter');
   try {
     const j = await api('getDokterList');
     if (j.ok && j.data.length) {
-      sel.innerHTML = '<option value="">-- Pilih nama --</option>' +
-        j.data.map(d => `<option value="${d.id}">${d.nama} (${d.kategori})</option>`).join('');
+      dokterListFull = j.data;
       dokterKategoriMap = {};
       j.data.forEach(d => { dokterKategoriMap[d.id] = d.kategori; });
+      renderDokterOptions(dokterListFull, false);
     } else {
+      dokterListFull = [];
       sel.innerHTML = '<option value="">Tidak ada dokter aktif</option>';
     }
   } catch (e) {
@@ -169,17 +195,25 @@ async function loadDokterList() {
   }
   updateBtnState();
 }
-document.getElementById('selDokter').addEventListener('change', updateBtnState);
+document.getElementById('cariDokter').addEventListener('input', filterDokter);
+document.getElementById('selDokter').addEventListener('change', () => {
+  const idDokter = document.getElementById('selDokter').value;
+  const defaultKat = dokterKategoriMap[idDokter];
+  const selPeran = document.getElementById('selPeran');
+  if (defaultKat && Array.from(selPeran.options).some(o => o.value === defaultKat)) {
+    selPeran.value = defaultKat;
+  }
+  updateBtnState();
+});
 document.getElementById('selPeran').addEventListener('change', updateBtnState);
 
 /* ===== Absen ===== */
 async function absen() {
   const idDokter = document.getElementById('selDokter').value;
   const pin = document.getElementById('pin').value;
-  const isGanda = idDokter && dokterKategoriMap[idDokter] === KATEGORI_GANDA;
   const peran = document.getElementById('selPeran').value;
   if (!idDokter) return setMsg('Pilih nama dokter dahulu', 'bad');
-  if (isGanda && !peran) return setMsg('Pilih dulu peran hari ini (IGD/Bangsal/Manajerial)', 'bad');
+  if (!peran) return setMsg('Pilih dulu status jaga hari ini (IGD/Bangsal/Manajerial/Manajerial & Fungsional)', 'bad');
   if (!pin) return setMsg('Masukkan PIN', 'bad');
   if (!camReady) return setMsg('Kamera belum siap', 'bad');
   if (currentLat === null || currentLon === null) return setMsg('Lokasi GPS belum terkunci, tunggu sebentar', 'bad');
@@ -191,7 +225,7 @@ async function absen() {
   const fotoBase64 = capturePhoto();
 
   try {
-    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran: isGanda ? peran : undefined, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 });
+    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 });
     if (j.ok) {
       const label = j.mode === 'masuk' ? 'ABSEN MASUK' : 'ABSEN KELUAR';
       let detail = `${label} berhasil — ${j.nama}\n${j.kategori} / ${j.shift}\nJam: ${j.jam}`;
