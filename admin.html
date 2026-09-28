@@ -213,8 +213,8 @@
     <div class="card">
       <h3>Riwayat &amp; Koreksi Manual Absensi</h3>
       <div class="row">
-        <div class="field"><label>Dari</label><input type="date" id="abDari"></div>
-        <div class="field"><label>Sampai</label><input type="date" id="abSampai"></div>
+        <div class="field"><label>Dari</label><input type="date" id="abDari" onchange="loadAbsensiRange()"></div>
+        <div class="field"><label>Sampai</label><input type="date" id="abSampai" onchange="loadAbsensiRange()"></div>
         <button class="btn" onclick="loadAbsensiRange()">Cari</button>
       </div>
       <div class="scroll-x"><table>
@@ -307,6 +307,7 @@ document.querySelectorAll('nav button').forEach(btn => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'absensi') loadAbsensiRange();
   });
 });
 
@@ -578,8 +579,12 @@ async function deleteAdminUser(nama) {
 
 function initApp() {
   const today = new Date();
-  document.getElementById('jdFilterBulan').value = today.toISOString().slice(0,7);
-  document.getElementById('rkBulan').value = today.toISOString().slice(0,7);
+  const pad = n => String(n).padStart(2, '0');
+  const todayStr = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
+  document.getElementById('jdFilterBulan').value = todayStr.slice(0,7);
+  document.getElementById('rkBulan').value = todayStr.slice(0,7);
+  document.getElementById('abDari').value = todayStr;
+  document.getElementById('abSampai').value = todayStr;
   loadMonitor(); loadDokter(); loadJadwal(); loadTarif();
   setInterval(loadMonitor, 20000);
 }
