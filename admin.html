@@ -159,6 +159,7 @@
   <div class="tab" id="tab-tarif">
     <div class="card">
       <h3>Tarif per Shift (IGD / Bangsal / Poli Umum / Manajerial &amp; Fungsional)</h3>
+      <input type="hidden" id="tsId">
       <div class="row">
         <div class="field"><label>Kategori</label><select id="tsKategori"><option>IGD</option><option>Bangsal</option><option>Poli Umum</option><option>Manajerial & Fungsional</option></select></div>
         <div class="field"><label>Shift</label><select id="tsShift"><option>Pagi</option><option>Siang</option><option>Malam</option></select></div>
@@ -166,22 +167,25 @@
         <div class="field"><label>Berlaku Mulai</label><input type="date" id="tsBerlaku"></div>
       </div>
       <button class="btn" onclick="saveTarifShift()">Simpan Tarif Shift</button>
+      <button class="btn" style="background:#94a3b8" onclick="resetTarifShiftForm()">Form Baru</button>
       <div class="scroll-x" style="margin-top:12px;"><table>
-        <thead><tr><th>Kategori</th><th>Shift</th><th>Nominal</th><th>Berlaku Mulai</th></tr></thead>
+        <thead><tr><th>Kategori</th><th>Shift</th><th>Nominal</th><th>Berlaku Mulai</th><th></th></tr></thead>
         <tbody id="tarifShiftBody"></tbody>
       </table></div>
     </div>
 
     <div class="card">
       <h3>Tarif Manajerial (per Jam)</h3>
+      <input type="hidden" id="tmId">
       <div class="row">
         <div class="field"><label>Jabatan (atau "Umum")</label><input id="tmJabatan" placeholder="Umum / nama jabatan spesifik"></div>
         <div class="field"><label>Nominal per Jam (Rp)</label><input type="number" id="tmNominal"></div>
         <div class="field"><label>Berlaku Mulai</label><input type="date" id="tmBerlaku"></div>
       </div>
       <button class="btn" onclick="saveTarifManajerial()">Simpan Tarif Manajerial</button>
+      <button class="btn" style="background:#94a3b8" onclick="resetTarifManForm()">Form Baru</button>
       <div class="scroll-x" style="margin-top:12px;"><table>
-        <thead><tr><th>Jabatan</th><th>Nominal/Jam</th><th>Berlaku Mulai</th></tr></thead>
+        <thead><tr><th>Jabatan</th><th>Nominal/Jam</th><th>Berlaku Mulai</th><th></th></tr></thead>
         <tbody id="tarifManBody"></tbody>
       </table></div>
     </div>
@@ -436,11 +440,19 @@ async function deleteJadwal(id) {
 async function loadTarif() {
   const j1 = await api('getTarifShift');
   if (j1.ok) document.getElementById('tarifShiftBody').innerHTML = j1.data.map(r => `
-    <tr><td>${tagHtml(r.Kategori)}</td><td>${r.Shift}</td><td>${fmtRp(r.Nominal)}</td><td>${r.Berlaku_Mulai}</td></tr>
+    <tr><td>${tagHtml(r.Kategori)}</td><td>${r.Shift}</td><td>${fmtRp(r.Nominal)}</td><td>${r.Berlaku_Mulai}</td>
+      <td>
+        <button class="btn sm" onclick='editTarifShift(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Edit</button>
+        <button class="btn sm bad" onclick="deleteTarifShift('${r.ID_Tarif}')">Hapus</button>
+      </td></tr>
   `).join('');
   const j2 = await api('getTarifManajerial');
   if (j2.ok) document.getElementById('tarifManBody').innerHTML = j2.data.map(r => `
-    <tr><td>${r.Jabatan}</td><td>${fmtRp(r.Nominal_Per_Jam)}</td><td>${r.Berlaku_Mulai}</td></tr>
+    <tr><td>${r.Jabatan}</td><td>${fmtRp(r.Nominal_Per_Jam)}</td><td>${r.Berlaku_Mulai}</td>
+      <td>
+        <button class="btn sm" onclick='editTarifManajerial(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Edit</button>
+        <button class="btn sm bad" onclick="deleteTarifManajerial('${r.ID_Tarif}')">Hapus</button>
+      </td></tr>
   `).join('');
   const j3 = await api('getShiftConfig');
   if (j3.ok) document.getElementById('shiftConfigBody').innerHTML = j3.data.map((r,i) => `
@@ -453,6 +465,7 @@ async function loadTarif() {
 }
 async function saveTarifShift() {
   const data = {
+    ID_Tarif: document.getElementById('tsId').value,
     Kategori: document.getElementById('tsKategori').value,
     Shift: document.getElementById('tsShift').value,
     Nominal: document.getElementById('tsNominal').value,
@@ -460,16 +473,51 @@ async function saveTarifShift() {
   };
   if (!data.Nominal || !data.Berlaku_Mulai) return alert('Lengkapi nominal & tanggal berlaku');
   const j = await api('saveTarifShift', { data });
+  if (j.ok) { resetTarifShiftForm(); loadTarif(); } else alert(j.error);
+}
+function editTarifShift(r) {
+  document.getElementById('tsId').value = r.ID_Tarif;
+  document.getElementById('tsKategori').value = r.Kategori;
+  document.getElementById('tsShift').value = r.Shift;
+  document.getElementById('tsNominal').value = r.Nominal;
+  document.getElementById('tsBerlaku').value = r.Berlaku_Mulai;
+}
+function resetTarifShiftForm() {
+  document.getElementById('tsId').value = '';
+  document.getElementById('tsNominal').value = '';
+  document.getElementById('tsBerlaku').value = '';
+}
+async function deleteTarifShift(id) {
+  if (!confirm('Hapus tarif shift ini?')) return;
+  const j = await api('deleteTarifShift', { id });
   if (j.ok) loadTarif(); else alert(j.error);
 }
 async function saveTarifManajerial() {
   const data = {
+    ID_Tarif: document.getElementById('tmId').value,
     Jabatan: document.getElementById('tmJabatan').value || 'Umum',
     Nominal_Per_Jam: document.getElementById('tmNominal').value,
     Berlaku_Mulai: document.getElementById('tmBerlaku').value
   };
   if (!data.Nominal_Per_Jam || !data.Berlaku_Mulai) return alert('Lengkapi nominal & tanggal berlaku');
   const j = await api('saveTarifManajerial', { data });
+  if (j.ok) { resetTarifManForm(); loadTarif(); } else alert(j.error);
+}
+function editTarifManajerial(r) {
+  document.getElementById('tmId').value = r.ID_Tarif;
+  document.getElementById('tmJabatan').value = r.Jabatan;
+  document.getElementById('tmNominal').value = r.Nominal_Per_Jam;
+  document.getElementById('tmBerlaku').value = r.Berlaku_Mulai;
+}
+function resetTarifManForm() {
+  document.getElementById('tmId').value = '';
+  document.getElementById('tmJabatan').value = '';
+  document.getElementById('tmNominal').value = '';
+  document.getElementById('tmBerlaku').value = '';
+}
+async function deleteTarifManajerial(id) {
+  if (!confirm('Hapus tarif manajerial ini?')) return;
+  const j = await api('deleteTarifManajerial', { id });
   if (j.ok) loadTarif(); else alert(j.error);
 }
 async function saveShiftConfig() {
