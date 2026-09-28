@@ -39,6 +39,7 @@
   .tag{padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700;white-space:nowrap;}
   .tag.IGD{background:#fee2e2;color:#991b1b;}
   .tag.Bangsal{background:#dbeafe;color:#1e40af;}
+  .tag.Poli-Umum{background:#dcfce7;color:#166534;}
   .tag.Manajerial{background:#ede9fe;color:#5b21b6;}
   .tag.Manajerial---Fungsional{background:#fef3c7;color:#92400e;}
   .muted{color:#94a3b8;font-size:.78rem;}
@@ -62,7 +63,10 @@
 <div id="app">
 <header>
   <h1>🩺 SIABSEN-DOKTER — Admin</h1>
-  <div class="who" id="whoami"></div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div class="who" id="whoami"></div>
+    <button class="btn sm" style="background:#dc3545" onclick="doLogout()">Keluar</button>
+  </div>
 </header>
 <nav>
   <button data-tab="monitor" class="active">Monitoring</button>
@@ -98,6 +102,7 @@
           <select id="dkKategori">
             <option>IGD</option>
             <option>Bangsal</option>
+            <option>Poli Umum</option>
             <option>Manajerial</option>
             <option>Manajerial & Fungsional</option>
           </select>
@@ -133,7 +138,7 @@
       <div class="row">
         <div class="field"><label>Tanggal</label><input type="date" id="jdTanggal"></div>
         <div class="field"><label>Dokter</label><select id="jdDokter"></select></div>
-        <div class="field"><label>Kategori Sesi Ini</label><select id="jdKategori"><option>IGD</option><option>Bangsal</option><option>Manajerial</option><option>Manajerial & Fungsional</option></select></div>
+        <div class="field"><label>Kategori Sesi Ini</label><select id="jdKategori"><option>IGD</option><option>Bangsal</option><option>Poli Umum</option><option>Manajerial</option><option>Manajerial & Fungsional</option></select></div>
       </div>
       <div class="row">
         <div class="field"><label>Rencana Jam Mulai</label><input type="time" id="jdJamMulai"></div>
@@ -153,9 +158,9 @@
   <!-- TARIF -->
   <div class="tab" id="tab-tarif">
     <div class="card">
-      <h3>Tarif per Shift (IGD / Bangsal / Manajerial &amp; Fungsional)</h3>
+      <h3>Tarif per Shift (IGD / Bangsal / Poli Umum / Manajerial &amp; Fungsional)</h3>
       <div class="row">
-        <div class="field"><label>Kategori</label><select id="tsKategori"><option>IGD</option><option>Bangsal</option><option>Manajerial & Fungsional</option></select></div>
+        <div class="field"><label>Kategori</label><select id="tsKategori"><option>IGD</option><option>Bangsal</option><option>Poli Umum</option><option>Manajerial & Fungsional</option></select></div>
         <div class="field"><label>Shift</label><select id="tsShift"><option>Pagi</option><option>Siang</option><option>Malam</option></select></div>
         <div class="field"><label>Nominal (Rp)</label><input type="number" id="tsNominal"></div>
         <div class="field"><label>Berlaku Mulai</label><input type="date" id="tsBerlaku"></div>
@@ -238,6 +243,14 @@
       <button class="btn" style="background:#94a3b8" onclick="pakaiLokasiSaatIni()">Isi dari Lokasi Perangkat Ini</button>
       <p class="map-hint">Tips: cari titik RS di <a href="https://www.google.com/maps" target="_blank" rel="noopener">Google Maps</a>, klik kanan lokasi persis di peta, lalu klik angka koordinat yang muncul untuk menyalinnya, dan tempel ke kolom Latitude/Longitude di atas. Atau, kalau perangkat ini sedang berada di lokasi RS, klik tombol "Isi dari Lokasi Perangkat Ini".</p>
       <div id="gpsMsg" class="muted" style="margin-top:10px;"></div>
+    </div>
+    <div class="card">
+      <h3>Toleransi Keterlambatan &amp; Potongan Honor</h3>
+      <p class="muted">Kalau dokter absen masuk melebihi toleransi ini dari jam mulai shift, honor shift hari itu dipotong otomatis secara proporsional (menit telat ÷ total menit shift). Tidak berlaku untuk kategori Manajerial (per jam), karena honornya sudah mengikuti jam kerja aktual.</p>
+      <div class="row">
+        <div class="field"><label>Toleransi Telat (menit)</label><input type="number" id="gpsToleransi" placeholder="cth: 15" min="0"></div>
+      </div>
+      <button class="btn" onclick="saveGpsSettings()">Simpan Toleransi</button>
     </div>
   </div>
 
@@ -323,7 +336,7 @@ async function loadMonitor() {
   document.getElementById('monBody').innerHTML = j.data.map(r => `
     <tr><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td><td>${r.Shift_Terdeteksi}</td>
     <td>${r.Jam_Masuk}</td><td>${r.Jam_Keluar || '<span class="muted">belum keluar</span>'}</td>
-    <td>${r.Durasi_Jam || '-'}</td><td>${fmtRp(r.Nominal)}</td></tr>
+    <td>${r.Durasi_Jam || '-'}</td><td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;">${r.Keterangan}</span>` : ''}</td></tr>
   `).join('') || '<tr><td colspan="7" class="muted">Belum ada absensi hari ini</td></tr>';
 }
 
@@ -495,7 +508,7 @@ async function loadAbsensiRange() {
   if (!j.ok) return;
   document.getElementById('absensiBody').innerHTML = j.data.map(r => `
     <tr><td>${r.Tanggal}</td><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td><td>${r.Shift_Terdeteksi}</td>
-    <td>${r.Jam_Masuk}</td><td>${r.Jam_Keluar}</td><td>${fmtRp(r.Nominal)}</td><td>${r.Status_Nominal}</td>
+    <td>${r.Jam_Masuk}</td><td>${r.Jam_Keluar}</td><td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;">${r.Keterangan}</span>` : ''}</td><td>${r.Status_Nominal}</td>
     <td><button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button></td></tr>
   `).join('') || '<tr><td colspan="9" class="muted">Tidak ada data</td></tr>';
 }
@@ -514,16 +527,18 @@ async function loadGpsSettings() {
   document.getElementById('gpsLat').value = j.lat;
   document.getElementById('gpsLon').value = j.lon;
   document.getElementById('gpsRadius').value = j.radius;
+  document.getElementById('gpsToleransi').value = j.toleransi_telat_menit;
 }
 async function saveGpsSettings() {
   const lat = document.getElementById('gpsLat').value;
   const lon = document.getElementById('gpsLon').value;
   const radius = document.getElementById('gpsRadius').value;
+  const toleransi_telat_menit = document.getElementById('gpsToleransi').value;
   if (!lat || !lon || !radius) return alert('Latitude, longitude, dan radius wajib diisi');
-  const j = await api('saveGpsSettings', { lat, lon, radius });
+  const j = await api('saveGpsSettings', { lat, lon, radius, toleransi_telat_menit });
   const msgEl = document.getElementById('gpsMsg');
   if (j.ok) {
-    msgEl.textContent = 'Lokasi & radius berhasil disimpan. Dokter akan langsung memakai nilai baru ini di absen berikutnya.';
+    msgEl.textContent = 'Pengaturan berhasil disimpan. Dokter akan langsung memakai nilai baru ini di absen berikutnya.';
     msgEl.style.color = '#166534';
   } else {
     msgEl.textContent = j.error;
@@ -577,6 +592,7 @@ async function deleteAdminUser(nama) {
   if (j.ok) loadAdminUsers(); else alert(j.error);
 }
 
+let monitorInterval = null;
 function initApp() {
   const today = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -586,7 +602,23 @@ function initApp() {
   document.getElementById('abDari').value = todayStr;
   document.getElementById('abSampai').value = todayStr;
   loadMonitor(); loadDokter(); loadJadwal(); loadTarif();
-  setInterval(loadMonitor, 20000);
+  if (monitorInterval) clearInterval(monitorInterval);
+  monitorInterval = setInterval(loadMonitor, 20000);
+}
+
+function doLogout() {
+  if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
+  AKTOR = null; AKTOR_ROLE = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'block';
+  document.getElementById('pinInput').value = '';
+  document.getElementById('loginMsg').textContent = '';
+  document.getElementById('navGps').style.display = 'none';
+  document.getElementById('navAkun').style.display = 'none';
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('nav button[data-tab="monitor"]').classList.add('active');
+  document.getElementById('tab-monitor').classList.add('active');
 }
 </script>
 </body>
