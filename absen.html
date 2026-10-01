@@ -287,6 +287,18 @@ async function loadDokterList() {
   updateBtnState();
 }
 document.getElementById('cariDokter').addEventListener('input', filterDokter);
+
+// TURBO: "bangunkan" server Google saat dokter mulai mengisi PIN, supaya ketika tombol
+// absen ditekan server sudah siap (server yang tertidur butuh 1–3 detik untuk bangun).
+let terakhirKontakServer = Date.now();
+function pemanasServer() {
+  if (Date.now() - terakhirKontakServer < 60000) return;
+  terakhirKontakServer = Date.now();
+  api('ping', {}, 15).catch(() => {});
+}
+document.getElementById('pin').addEventListener('focus', pemanasServer);
+document.getElementById('selDokter').addEventListener('change', pemanasServer);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pemanasServer(); });
 document.getElementById('selDokter').addEventListener('change', () => {
   const idDokter = document.getElementById('selDokter').value;
   const defaultKat = dokterKategoriMap[idDokter];
@@ -352,6 +364,7 @@ async function absen(mode) {
     for (let i = 0; i < 3 && !j; i++) {
       try {
         j = await api('recordAbsen', data, 30);
+        terakhirKontakServer = Date.now();
       } catch (e) {
         errTerakhir = e;
         labelProses = 'Sinyal lemah, mencoba lagi (' + (i + 2) + '/3)...';
