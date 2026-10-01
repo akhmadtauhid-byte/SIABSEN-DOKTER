@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Absensi Dokter Jaga</title>
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
 <style>
   :root{--pri:#0d6efd;--ok:#198754;--bad:#dc3545;}
   *{box-sizing:border-box;}
@@ -92,9 +94,23 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxH8s3CbHOs9Km09sFfwXUn
 let currentLat = null, currentLon = null;
 let camReady = false;
 
-async function api(action, data) {
-  const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action }, data || {})) });
-  return res.json();
+// TURBO: permintaan dibatasi waktu, supaya layar tidak "muter terus" kalau sinyal putus.
+async function api(action, data, batasDetik) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), (batasDetik || 40) * 1000);
+  try {
+    const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action }, data || {})), signal: ctrl.signal });
+    return await res.json();
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Koneksi lambat / terputus. Cek sinyal lalu coba lagi.');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function setMsg(text, cls) {
@@ -133,10 +149,14 @@ async function startCamera() {
 function capturePhoto() {
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
-  canvas.width = video.videoWidth || 480;
-  canvas.height = video.videoHeight || 360;
+  // TURBO: foto diperkecil (lebar maks 400px, kualitas 60%) → ukuran unggah jauh lebih kecil,
+  // absen lebih cepat terutama saat sinyal lemah. Wajah tetap jelas untuk bukti kehadiran.
+  const vw = video.videoWidth || 480, vh = video.videoHeight || 360;
+  const skala = Math.min(1, 400 / vw);
+  canvas.width = Math.round(vw * skala);
+  canvas.height = Math.round(vh * skala);
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.7);
+  return canvas.toDataURL('image/jpeg', 0.6);
 }
 
 /* ===== GPS ===== */
@@ -169,7 +189,7 @@ function renderDokterOptions(list, keepSelected) {
   const prevValue = keepSelected ? sel.value : '';
   if (list.length) {
     sel.innerHTML = '<option value="">-- Pilih nama --</option>' +
-      list.map(d => `<option value="${d.id}">${d.nama} (${d.kategori})</option>`).join('');
+      list.map(d => `<option value="${esc(d.id)}">${esc(d.nama)} (${esc(d.kategori)})</option>`).join('');
   } else {
     sel.innerHTML = '<option value="">Tidak ditemukan</option>';
   }
@@ -186,22 +206,39 @@ function filterDokter() {
   updateBtnState();
 }
 
+function terapkanDaftarDokter(data, keepSelected) {
+  dokterListFull = data;
+  dokterKategoriMap = {};
+  data.forEach(d => { dokterKategoriMap[d.id] = d.kategori; });
+  const q = document.getElementById('cariDokter').value.trim().toLowerCase();
+  renderDokterOptions(q ? data.filter(d => d.nama.toLowerCase().includes(q)) : data, keepSelected);
+  updateBtnState();
+}
+
+// TURBO: daftar dokter langsung tampil dari simpanan perangkat (tanpa menunggu server),
+// lalu diperbarui diam-diam di belakang layar dari server.
+const KUNCI_SIMPAN = 'siabsen_dokter_v3';
 async function loadDokterList() {
   const sel = document.getElementById('selDokter');
+  let adaSimpanan = false;
+  try {
+    const simpan = JSON.parse(localStorage.getItem(KUNCI_SIMPAN) || 'null');
+    if (simpan && Array.isArray(simpan) && simpan.length) { terapkanDaftarDokter(simpan, false); adaSimpanan = true; }
+  } catch (e) { /* penyimpanan perangkat tidak tersedia — lanjut ambil dari server */ }
   try {
     const j = await api('getDokterList');
     if (j.ok && j.data.length) {
-      dokterListFull = j.data;
-      dokterKategoriMap = {};
-      j.data.forEach(d => { dokterKategoriMap[d.id] = d.kategori; });
-      renderDokterOptions(dokterListFull, false);
-    } else {
+      terapkanDaftarDokter(j.data, true);
+      try { localStorage.setItem(KUNCI_SIMPAN, JSON.stringify(j.data)); } catch (e) {}
+    } else if (!adaSimpanan) {
       dokterListFull = [];
       sel.innerHTML = '<option value="">Tidak ada dokter aktif</option>';
     }
   } catch (e) {
-    sel.innerHTML = '<option value="">Gagal memuat, coba muat ulang halaman</option>';
-    setMsg('Gagal memuat daftar dokter: ' + e.message, 'bad');
+    if (!adaSimpanan) {
+      sel.innerHTML = '<option value="">Gagal memuat, coba muat ulang halaman</option>';
+      setMsg('Gagal memuat daftar dokter: ' + e.message, 'bad');
+    }
   }
   updateBtnState();
 }
@@ -232,12 +269,16 @@ async function absen(mode) {
 
   document.getElementById('btnAbsenMasuk').disabled = true;
   document.getElementById('btnAbsenKeluar').disabled = true;
-  setMsg('Memproses ' + (mode === 'masuk' ? 'Absen Masuk' : 'Absen Keluar') + '...', '');
+  const labelProses = 'Memproses ' + (mode === 'masuk' ? 'Absen Masuk' : 'Absen Keluar') + '...';
+  setMsg(labelProses, '');
+  const mulai = Date.now();
+  const detik = setInterval(() => setMsg(labelProses + ' (' + Math.round((Date.now() - mulai) / 1000) + ' dtk)', ''), 1000);
 
   const fotoBase64 = capturePhoto();
 
   try {
-    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran, mode, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 });
+    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran, mode, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 }, 60);
+    clearInterval(detik);
     if (j.ok) {
       const label = j.mode === 'masuk' ? 'ABSEN MASUK' : 'ABSEN KELUAR';
       let detail = `${label} berhasil — ${j.nama}\n${j.kategori} / ${j.shift}\nJam: ${j.jam}`;
@@ -245,6 +286,7 @@ async function absen(mode) {
       detail += `\nJarak dari RS: ${j.jarak_meter} m`;
       detail += `\nNominal: Rp ${Number(j.nominal || 0).toLocaleString('id-ID')}`;
       if (j.keterangan) detail += `\n⚠️ ${j.keterangan}`;
+      detail += `\n⚡ selesai dalam ${((Date.now() - mulai) / 1000).toFixed(1)} detik`;
       setMsg(detail, j.telat_menit > 0 ? 'bad' : 'ok');
       document.getElementById('pin').value = '';
       document.getElementById('selPeran').value = '';
@@ -254,6 +296,7 @@ async function absen(mode) {
   } catch (e) {
     setMsg('Gagal terhubung ke server: ' + e.message, 'bad');
   } finally {
+    clearInterval(detik);
     updateBtnState();
   }
 }
