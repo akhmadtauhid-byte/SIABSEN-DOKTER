@@ -91,7 +91,8 @@
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbxH8s3CbHOs9Km09sFfwXUn3wMA502GQSU5fVjoxEUq70Gth5yL2YG0p_PbhG1--YKRhQ/exec';
 
-let currentLat = null, currentLon = null;
+let currentLat = null, currentLon = null, currentAcc = null;
+let lokasiRS = null; // {lat, lon, radius, toleransi_akurasi} dari server
 let camReady = false;
 
 // TURBO: permintaan dibatasi waktu, supaya layar tidak "muter terus" kalau sinyal putus.
@@ -168,10 +169,15 @@ function startGps() {
   }
   navigator.geolocation.watchPosition(
     pos => {
-      currentLat = pos.coords.latitude;
-      currentLon = pos.coords.longitude;
-      document.getElementById('dotGps').className = 'dot ok';
-      document.getElementById('statGps').textContent = 'Lokasi terkunci (akurasi ~' + Math.round(pos.coords.accuracy) + 'm)';
+      // Kalau HP mengirim beberapa posisi, simpan yang lebih akurat (atau yang terbaru bila sudah >20 dtk)
+      const acc = pos.coords.accuracy;
+      if (currentAcc === null || acc <= currentAcc + 10 || Date.now() - (window._gpsWaktu || 0) > 20000) {
+        currentLat = pos.coords.latitude;
+        currentLon = pos.coords.longitude;
+        currentAcc = acc;
+        window._gpsWaktu = Date.now();
+      }
+      tampilStatusGps();
     },
     err => {
       document.getElementById('dotGps').className = 'dot bad';
@@ -179,6 +185,32 @@ function startGps() {
     },
     { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
   );
+}
+
+function jarakMeter(lat1, lon1, lat2, lon2) {
+  const R = 6371000, r = d => d * Math.PI / 180;
+  const a = Math.sin(r(lat2 - lat1) / 2) ** 2 + Math.cos(r(lat1)) * Math.cos(r(lat2)) * Math.sin(r(lon2 - lon1) / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Tampilkan jarak ke RS & akurasi GPS, supaya dokter tahu sebelum menekan tombol absen.
+function tampilStatusGps() {
+  if (currentLat === null) return;
+  const dot = document.getElementById('dotGps'), st = document.getElementById('statGps');
+  const acc = Math.round(currentAcc);
+  if (!lokasiRS) { dot.className = 'dot ok'; st.textContent = 'Lokasi terkunci (akurasi ±' + acc + ' m)'; return; }
+  const jarak = Math.round(jarakMeter(lokasiRS.lat, lokasiRS.lon, currentLat, currentLon));
+  const tol = Math.min(acc, lokasiRS.toleransi_akurasi || 100);
+  if (jarak - tol <= lokasiRS.radius) {
+    dot.className = 'dot ok';
+    st.textContent = '✅ Di area RS (jarak ' + jarak + ' m, akurasi ±' + acc + ' m)';
+  } else if (acc > (lokasiRS.toleransi_akurasi || 100)) {
+    dot.className = 'dot bad';
+    st.textContent = '⏳ GPS belum akurat (±' + acc + ' m, terbaca ' + jarak + ' m dari RS). Aktifkan Lokasi Akurat, nyalakan WiFi, dekati jendela & tunggu sebentar...';
+  } else {
+    dot.className = 'dot bad';
+    st.textContent = '❌ Terbaca di luar area RS (jarak ' + jarak + ' m, batas ' + lokasiRS.radius + ' m)';
+  }
 }
 
 /* ===== Dokter list ===== */
@@ -221,12 +253,18 @@ const KUNCI_SIMPAN = 'siabsen_dokter_v3';
 async function loadDokterList() {
   const sel = document.getElementById('selDokter');
   let adaSimpanan = false;
+  try { lokasiRS = JSON.parse(localStorage.getItem('siabsen_lokasi_rs') || 'null'); } catch (e) {}
   try {
     const simpan = JSON.parse(localStorage.getItem(KUNCI_SIMPAN) || 'null');
     if (simpan && Array.isArray(simpan) && simpan.length) { terapkanDaftarDokter(simpan, false); adaSimpanan = true; }
   } catch (e) { /* penyimpanan perangkat tidak tersedia — lanjut ambil dari server */ }
   try {
     const j = await api('getDokterList');
+    if (j.ok && j.lokasi) {
+      lokasiRS = j.lokasi;
+      try { localStorage.setItem('siabsen_lokasi_rs', JSON.stringify(j.lokasi)); } catch (e) {}
+      tampilStatusGps();
+    }
     if (j.ok && j.data.length) {
       terapkanDaftarDokter(j.data, true);
       try { localStorage.setItem(KUNCI_SIMPAN, JSON.stringify(j.data)); } catch (e) {}
@@ -277,13 +315,13 @@ async function absen(mode) {
   const fotoBase64 = capturePhoto();
 
   try {
-    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran, mode, lat: currentLat, lon: currentLon, foto_base64: fotoBase64 }, 60);
+    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran, mode, lat: currentLat, lon: currentLon, akurasi: currentAcc, foto_base64: fotoBase64 }, 60);
     clearInterval(detik);
     if (j.ok) {
       const label = j.mode === 'masuk' ? 'ABSEN MASUK' : 'ABSEN KELUAR';
       let detail = `${label} berhasil — ${j.nama}\n${j.kategori} / ${j.shift}\nJam: ${j.jam}`;
       if (j.mode === 'keluar') detail += `\nDurasi: ${j.durasi_jam} jam`;
-      detail += `\nJarak dari RS: ${j.jarak_meter} m`;
+      detail += `\nJarak dari RS: ${j.jarak_meter} m (akurasi GPS ±${Math.round(currentAcc)} m)`;
       detail += `\nNominal: Rp ${Number(j.nominal || 0).toLocaleString('id-ID')}`;
       if (j.keterangan) detail += `\n⚠️ ${j.keterangan}`;
       detail += `\n⚡ selesai dalam ${((Date.now() - mulai) / 1000).toFixed(1)} detik`;
