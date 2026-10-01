@@ -83,6 +83,7 @@
     <p class="muted" style="font-size:.75rem;text-align:center;margin-top:8px;">Pilih Absen Masuk kalau baru mulai jaga hari ini, atau Absen Keluar kalau mengakhiri jaga yang sedang berjalan.</p>
 
     <div class="msg" id="msg"></div>
+    <p class="muted" id="fotoStatus" style="font-size:.78rem;text-align:center;margin:8px 0 0;"></p>
   </div>
   <div class="clock" id="clock"></div>
   <a class="back" href="index.html">← Kembali ke menu</a>
@@ -101,7 +102,12 @@ async function api(action, data, batasDetik) {
   const timer = setTimeout(() => ctrl.abort(), (batasDetik || 40) * 1000);
   try {
     const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action }, data || {})), signal: ctrl.signal });
-    return await res.json();
+    const teks = await res.text();
+    try { return JSON.parse(teks); }
+    catch (x) {
+      const judul = (teks.match(/<title>([^<]*)<\/title>/i) || [])[1] || '';
+      throw new Error('Server Google sedang bermasalah' + (judul ? ' (' + judul + ')' : '') + '. Coba lagi sebentar.');
+    }
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('Koneksi lambat / terputus. Cek sinyal lalu coba lagi.');
     throw e;
@@ -295,6 +301,30 @@ document.getElementById('selPeran').addEventListener('change', updateBtnState);
 /* ===== Absen ===== */
 // mode: 'masuk' atau 'keluar' — dua tombol terpisah supaya dokter tidak salah pencet,
 // server tetap memvalidasi ulang (kalau mode tidak cocok status sesi, akan ditolak dengan pesan jelas).
+function buatReqId() {
+  try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+}
+const tunda = ms => new Promise(r => setTimeout(r, ms));
+
+// TURBO tahap 2: foto bukti diunggah di belakang layar setelah absen tersimpan.
+// Dicoba sampai 3x; dokter tidak perlu menunggu bagian ini.
+async function unggahFotoLatar(token, fotoBase64) {
+  const el = document.getElementById('fotoStatus');
+  el.textContent = '📷 Mengunggah foto bukti...';
+  for (let i = 0; i < 3; i++) {
+    try {
+      const j = await api('uploadFotoAbsen', { foto_token: token, foto_base64: fotoBase64 }, 60);
+      if (j.ok) { el.textContent = '📷 Foto bukti tersimpan ✅'; return; }
+      if (/kedaluwarsa|tidak valid|tidak ditemukan/.test(j.error || '')) break;
+    } catch (e) { /* sinyal putus → coba lagi */ }
+    await tunda(3000 * (i + 1));
+  }
+  el.textContent = '📷 Foto bukti gagal terunggah (absen tetap tercatat). Admin akan melihat keterangan ini.';
+}
+
+// mode: 'masuk' atau 'keluar' — dua tombol terpisah supaya dokter tidak salah pencet,
+// server tetap memvalidasi ulang (kalau mode tidak cocok status sesi, akan ditolak dengan pesan jelas).
 async function absen(mode) {
   const idDokter = document.getElementById('selDokter').value;
   const pin = document.getElementById('pin').value;
@@ -307,16 +337,29 @@ async function absen(mode) {
 
   document.getElementById('btnAbsenMasuk').disabled = true;
   document.getElementById('btnAbsenKeluar').disabled = true;
-  const labelProses = 'Memproses ' + (mode === 'masuk' ? 'Absen Masuk' : 'Absen Keluar') + '...';
+  document.getElementById('fotoStatus').textContent = '';
+  let labelProses = 'Menyimpan ' + (mode === 'masuk' ? 'Absen Masuk' : 'Absen Keluar') + '...';
   setMsg(labelProses, '');
   const mulai = Date.now();
   const detik = setInterval(() => setMsg(labelProses + ' (' + Math.round((Date.now() - mulai) / 1000) + ' dtk)', ''), 1000);
 
   const fotoBase64 = capturePhoto();
+  // req_id yang sama dipakai saat mencoba ulang → server tidak akan mencatat absen dobel
+  const data = { id_dokter: idDokter, pin, peran, mode, lat: currentLat, lon: currentLon, akurasi: currentAcc, foto_tunda: true, req_id: buatReqId() };
 
   try {
-    const j = await api('recordAbsen', { id_dokter: idDokter, pin, peran, mode, lat: currentLat, lon: currentLon, akurasi: currentAcc, foto_base64: fotoBase64 }, 60);
+    let j = null, errTerakhir = null;
+    for (let i = 0; i < 3 && !j; i++) {
+      try {
+        j = await api('recordAbsen', data, 30);
+      } catch (e) {
+        errTerakhir = e;
+        labelProses = 'Sinyal lemah, mencoba lagi (' + (i + 2) + '/3)...';
+        await tunda(1500);
+      }
+    }
     clearInterval(detik);
+    if (!j) throw errTerakhir || new Error('Tidak ada jawaban dari server');
     if (j.ok) {
       const label = j.mode === 'masuk' ? 'ABSEN MASUK' : 'ABSEN KELUAR';
       let detail = `${label} berhasil — ${j.nama}\n${j.kategori} / ${j.shift}\nJam: ${j.jam}`;
@@ -324,15 +367,16 @@ async function absen(mode) {
       detail += `\nJarak dari RS: ${j.jarak_meter} m (akurasi GPS ±${Math.round(currentAcc)} m)`;
       detail += `\nNominal: Rp ${Number(j.nominal || 0).toLocaleString('id-ID')}`;
       if (j.keterangan) detail += `\n⚠️ ${j.keterangan}`;
-      detail += `\n⚡ selesai dalam ${((Date.now() - mulai) / 1000).toFixed(1)} detik`;
+      detail += `\n⚡ tersimpan dalam ${((Date.now() - mulai) / 1000).toFixed(1)} detik`;
       setMsg(detail, j.telat_menit > 0 ? 'bad' : 'ok');
       document.getElementById('pin').value = '';
       document.getElementById('selPeran').value = '';
+      if (j.foto_token && fotoBase64) unggahFotoLatar(j.foto_token, fotoBase64);
     } else {
       setMsg(j.error || 'Gagal memproses absensi', 'bad');
     }
   } catch (e) {
-    setMsg('Gagal terhubung ke server: ' + e.message, 'bad');
+    setMsg('Gagal terhubung ke server: ' + e.message + '\nSilakan tekan tombol lagi — absen tidak akan tercatat dobel.', 'bad');
   } finally {
     clearInterval(detik);
     updateBtnState();
