@@ -257,6 +257,7 @@
         <div class="field"><label>Sampai</label><input type="date" id="abSampai" onchange="loadAbsensiRange()"></div>
         <button class="btn" onclick="loadAbsensiRange()">Cari</button>
         <button class="btn" style="background:#166534" onclick="unduhRiwayatExcel()">📥 Unduh Excel (untuk Direksi)</button>
+        <button class="btn" style="background:#7c3aed" onclick="hitungUlangNominal()" title="Pakai setelah mengisi/memperbaiki tarif. Baris yang sudah dikoreksi manual tidak diubah.">🔁 Hitung Ulang Nominal</button>
       </div>
       <div class="scroll-x"><table>
         <thead><tr><th>Tgl</th><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Foto Masuk</th><th>Keluar</th><th>Foto Keluar</th><th>Nominal</th><th>Status</th><th></th></tr></thead>
@@ -740,6 +741,22 @@ function unduhExcel(rows, judul, namaFile) {
   XLSX.utils.book_append_sheet(wb, ws, 'Rekap');
   XLSX.writeFile(wb, namaFile + '.xlsx');
 }
+// Hitung ulang semua nominal "Otomatis" pada rentang tanggal yang dipilih,
+// memakai tarif & aturan potongan yang berlaku sekarang. Koreksi manual tidak disentuh.
+async function hitungUlangNominal() {
+  const dari = document.getElementById('abDari').value;
+  const sampai = document.getElementById('abSampai').value;
+  if (!dari || !sampai) return alert('Pilih tanggal Dari dan Sampai terlebih dahulu.');
+  if (!confirm('Hitung ulang nominal honor untuk absensi tanggal ' + dari + ' s/d ' + sampai + '?\n\n' +
+    '• Memakai tarif & aturan potongan telat yang berlaku sekarang\n' +
+    '• Baris yang sudah dikoreksi MANUAL tidak akan diubah')) return;
+  const j = await api('hitungUlangNominal', { dari, sampai }, 90);
+  if (!j.ok) return alert(j.error);
+  alert('Selesai.\n\nDiperiksa: ' + j.diperiksa + ' baris\nDiperbarui: ' + j.diperbarui + ' baris\n' +
+    'Dilewati (koreksi manual): ' + j.dilewati_manual + ' baris\nPerubahan total honor: ' + fmtRp(j.selisih));
+  loadAbsensiRange();
+}
+
 async function koreksi(r) {
   const nominalBaru = prompt('Koreksi nominal untuk ' + r.Nama_Dokter + ' (' + r.Tanggal + '):', r.Nominal);
   if (nominalBaru === null) return;
