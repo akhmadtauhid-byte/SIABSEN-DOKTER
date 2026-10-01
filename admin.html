@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin - SIABSEN Dokter</title>
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{--pri:#0d6efd;--ok:#198754;--bad:#dc3545;--bg:#f1f5f9;}
@@ -51,6 +53,14 @@
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
   .map-hint{font-size:.78rem;color:#64748b;margin-top:6px;}
   .map-hint a{color:var(--pri);}
+  .turbo{font-size:.75rem;color:#facc15;font-weight:700;white-space:nowrap;}
+  body.sibuk, body.sibuk *{cursor:progress !important;}
+  .sehat{list-style:none;padding:0;margin:0;}
+  .sehat li{padding:8px 10px;border-radius:8px;margin-bottom:6px;font-size:.82rem;line-height:1.4;}
+  .sehat li.ok{background:#dcfce7;color:#166534;}
+  .sehat li.warn{background:#fef3c7;color:#92400e;}
+  .sehat li.error{background:#fee2e2;color:#991b1b;}
+  .sehat li.info{background:#e0f2fe;color:#075985;}
 </style>
 </head>
 <body>
@@ -58,15 +68,17 @@
 <div id="loginScreen">
   <h2>🔐 Login Admin SIABSEN-Dokter</h2>
   <input type="password" id="pinInput" inputmode="numeric" placeholder="PIN" maxlength="8">
-  <button onclick="doLogin()">Masuk</button>
+  <button id="btnLogin" onclick="doLogin()">Masuk</button>
   <div id="loginMsg" class="muted" style="margin-top:8px;"></div>
 </div>
 
 <div id="app">
 <header>
   <h1>🩺 SIABSEN-DOKTER — Admin</h1>
-  <div style="display:flex;align-items:center;gap:12px;">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <span class="turbo" id="turbo" title="Waktu respons server terakhir">⚡ Turbo</span>
     <div class="who" id="whoami"></div>
+    <button class="btn sm" style="background:#334155" onclick="segarkanData()" title="Muat ulang semua data dari Google Sheets (pakai setelah mengedit sheet secara langsung)">🔄 Segarkan</button>
     <button class="btn sm" style="background:#dc3545" onclick="doLogout()">Keluar</button>
   </div>
 </header>
@@ -90,6 +102,12 @@
         <thead><tr><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Foto Masuk</th><th>Keluar</th><th>Foto Keluar</th><th>Durasi</th><th>Nominal</th></tr></thead>
         <tbody id="monBody"></tbody>
       </table></div>
+    </div>
+    <div class="card">
+      <h3>🩺 Kesehatan Sistem</h3>
+      <p class="muted" style="margin-top:0;">Memeriksa hal yang bisa membuat sistem bermasalah: tarif yang belum diatur (honor jadi Rp 0), dokter tanpa PIN, data dokter dobel, sesi lupa Absen Keluar, folder foto, dan struktur sheet.</p>
+      <button class="btn" onclick="cekKesehatan()">Jalankan Pemeriksaan</button>
+      <div id="kesehatanHasil" style="margin-top:12px;"></div>
     </div>
   </div>
 
@@ -299,36 +317,99 @@
 
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbxH8s3CbHOs9Km09sFfwXUn3wMA502GQSU5fVjoxEUq70Gth5yL2YG0p_PbhG1--YKRhQ/exec';
-let AKTOR = 'Admin';
-let AKTOR_ROLE = 'Admin';
+let AKTOR = null;
+let AKTOR_ROLE = null;
+let TOKEN = null;
 let dokterCache = [];
+const KUNCI_SESI = 'siabsen_admin_sesi';
 
-async function api(action, data) {
-  const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action, aktor: AKTOR }, data || {})) });
-  return res.json();
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function doLogin() {
-  const pin = document.getElementById('pinInput').value;
-  api('adminLogin', { pin }).then(j => {
-    if (j.ok) {
-      AKTOR = j.nama;
-      AKTOR_ROLE = j.role;
-      document.getElementById('loginScreen').style.display = 'none';
-      document.getElementById('app').style.display = 'block';
-      document.getElementById('whoami').textContent = j.nama + ' (' + j.role + ')';
-      if (j.role === 'Super Admin') {
-        document.getElementById('navAkun').style.display = 'inline-block';
-        document.getElementById('navGps').style.display = 'inline-block';
-        loadAdminUsers();
-        loadGpsSettings();
-      }
-      initApp();
-    } else {
-      document.getElementById('loginMsg').textContent = j.error;
-      document.getElementById('loginMsg').style.color = '#dc3545';
-    }
-  });
+/* ===== API (TURBO): token login, batas waktu, anti klik-dobel, indikator kecepatan ===== */
+const sedangJalan = {};
+let jumlahSibuk = 0;
+function setSibuk(on) {
+  jumlahSibuk = Math.max(0, jumlahSibuk + (on ? 1 : -1));
+  document.body.classList.toggle('sibuk', jumlahSibuk > 0);
+  if (jumlahSibuk > 0) document.getElementById('turbo').textContent = '⏳ Menyimpan...';
+}
+function tampilKecepatan(ms) {
+  if (jumlahSibuk > 0) return;
+  document.getElementById('turbo').textContent = '⚡ ' + (ms / 1000).toFixed(1) + ' dtk';
+}
+async function api(action, data, batasDetik) {
+  const tulis = /^(save|delete|update)/.test(action);
+  if (tulis && sedangJalan[action]) {
+    return { ok: false, error: 'Masih memproses penyimpanan sebelumnya, mohon tunggu sebentar.' };
+  }
+  if (tulis) { sedangJalan[action] = true; setSibuk(true); }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), (batasDetik || 45) * 1000);
+  const t0 = performance.now();
+  try {
+    const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action, token: TOKEN }, data || {})), signal: ctrl.signal });
+    const j = await res.json();
+    if (j && j.relogin && action !== 'adminLogin') sesiBerakhir(j.error);
+    return j;
+  } catch (e) {
+    return { ok: false, error: e.name === 'AbortError' ? 'Koneksi lambat / terputus. Coba lagi.' : 'Gagal terhubung ke server: ' + e.message };
+  } finally {
+    clearTimeout(timer);
+    if (tulis) { delete sedangJalan[action]; setSibuk(false); }
+    tampilKecepatan(performance.now() - t0);
+  }
+}
+
+function simpanSesi(obj) { try { sessionStorage.setItem(KUNCI_SESI, JSON.stringify(obj)); } catch (e) {} }
+function bacaSesi() { try { return JSON.parse(sessionStorage.getItem(KUNCI_SESI) || 'null'); } catch (e) { return null; } }
+function hapusSesi() { try { sessionStorage.removeItem(KUNCI_SESI); } catch (e) {} }
+
+function sesiBerakhir(pesan) {
+  if (!TOKEN) return;
+  TOKEN = null; AKTOR = null; AKTOR_ROLE = null;
+  hapusSesi();
+  if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'block';
+  document.getElementById('pinInput').value = '';
+  const m = document.getElementById('loginMsg');
+  m.textContent = pesan || 'Sesi login berakhir, silakan login ulang.';
+  m.style.color = '#dc3545';
+}
+
+async function doLogin() {
+  const btn = document.getElementById('btnLogin');
+  if (btn.disabled) return;
+  const pin = document.getElementById('pinInput').value.trim();
+  const m = document.getElementById('loginMsg');
+  if (!pin) { m.textContent = 'Masukkan PIN'; m.style.color = '#dc3545'; return; }
+  btn.disabled = true; btn.textContent = 'Memproses...';
+  m.textContent = '';
+  const j = await api('adminLogin', { pin });
+  btn.disabled = false; btn.textContent = 'Masuk';
+  if (j.ok) {
+    TOKEN = j.token;
+    simpanSesi({ token: j.token, nama: j.nama, role: j.role });
+    masukApp(j.nama, j.role);
+  } else {
+    m.textContent = j.error;
+    m.style.color = '#dc3545';
+  }
+}
+document.getElementById('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+function masukApp(nama, role) {
+  AKTOR = nama;
+  AKTOR_ROLE = role;
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('whoami').textContent = nama + ' (' + role + ')';
+  const superAdmin = role === 'Super Admin';
+  document.getElementById('navAkun').style.display = superAdmin ? 'inline-block' : 'none';
+  document.getElementById('navGps').style.display = superAdmin ? 'inline-block' : 'none';
+  initApp();
 }
 
 // tab switching
@@ -342,35 +423,40 @@ document.querySelectorAll('nav button').forEach(btn => {
   });
 });
 
+function jamHHMM(j) { const p = String(j || '').split(':'); return p.length < 2 ? '' : String(parseInt(p[0], 10) || 0).padStart(2, '0') + ':' + String(parseInt(p[1], 10) || 0).padStart(2, '0'); }
 function fmtRp(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fotoLink(url) {
   return url ? `<a href="${url}" target="_blank" rel="noopener">📷 Lihat</a>` : '<span class="muted">-</span>';
 }
 function tagClass(kat) { return String(kat || '').replace(/\s*&\s*/g, '---').replace(/[()]/g, '').replace(/\s+/g, '-'); }
-function tagHtml(kat) { return `<span class="tag ${tagClass(kat)}">${kat}</span>`; }
+function tagHtml(kat) { return `<span class="tag ${esc(tagClass(kat))}">${esc(kat)}</span>`; }
 
 /* ===== MONITORING ===== */
 async function loadMonitor() {
-  const j = await api('getAbsensiHariIni');
-  if (!j.ok) return;
+  renderMonitor(await api('getAbsensiHariIni'));
+}
+function renderMonitor(j) {
+  if (!j || !j.ok) return;
   document.getElementById('monTanggal').textContent = j.tanggal;
   document.getElementById('monBody').innerHTML = j.data.map(r => `
-    <tr><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td><td>${r.Shift_Terdeteksi}</td>
-    <td>${r.Jam_Masuk}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
-    <td>${r.Jam_Keluar || '<span class="muted">belum keluar</span>'}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
-    <td>${r.Durasi_Jam || '-'}</td><td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;">${r.Keterangan}</span>` : ''}</td></tr>
+    <tr><td>${esc(r.Nama_Dokter)}${r.Tanggal !== j.tanggal ? `<br><span class="muted">masuk ${esc(r.Tanggal)}</span>` : ''}</td><td>${tagHtml(r.Kategori)}</td><td>${esc(r.Shift_Terdeteksi)}</td>
+    <td>${esc(r.Jam_Masuk)}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
+    <td>${r.Jam_Keluar ? esc(r.Jam_Keluar) : '<span class="muted">belum keluar</span>'}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
+    <td>${r.Durasi_Jam || '-'}</td><td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;white-space:normal;">${esc(r.Keterangan)}</span>` : ''}</td></tr>
   `).join('') || '<tr><td colspan="9" class="muted">Belum ada absensi hari ini</td></tr>';
 }
 
 /* ===== DOKTER ===== */
 async function loadDokter() {
-  const j = await api('getDokter');
-  if (!j.ok) return;
+  renderDokter(await api('getDokter'));
+}
+function renderDokter(j) {
+  if (!j || !j.ok) return;
   dokterCache = j.data;
   document.getElementById('dokterBody').innerHTML = j.data.map(d => `
     <tr>
-      <td>${d.Nama}</td><td>${tagHtml(d.Kategori_Default)}</td><td>${d.Jabatan_Manajerial || '-'}</td>
-      <td>${d.Status}</td><td>${d.PIN_Absen_Set ? '✅ diset' : '❌ belum'}</td>
+      <td>${esc(d.Nama)}</td><td>${tagHtml(d.Kategori_Default)}</td><td>${esc(d.Jabatan_Manajerial || '-')}</td>
+      <td>${esc(d.Status)}</td><td>${d.PIN_Absen_Set ? '✅ diset' : '❌ belum'}</td>
       <td>
         <button class="btn sm" onclick='editDokter(${JSON.stringify(d).replace(/'/g,"&apos;")})'>Edit</button>
         <button class="btn sm bad" onclick="deleteDokter('${d.ID_Dokter}')">Hapus</button>
@@ -379,7 +465,8 @@ async function loadDokter() {
   populateDokterSelect();
 }
 function populateDokterSelect() {
-  document.getElementById('jdDokter').innerHTML = dokterCache.map(d => `<option value="${d.ID_Dokter}">${d.Nama}</option>`).join('');
+  document.getElementById('jdDokter').innerHTML = dokterCache.filter(d => String(d.Status).toLowerCase() === 'aktif')
+    .map(d => `<option value="${esc(d.ID_Dokter)}">${esc(d.Nama)}</option>`).join('');
 }
 function editDokter(d) {
   document.getElementById('dkId').value = d.ID_Dokter;
@@ -391,7 +478,7 @@ function editDokter(d) {
   document.getElementById('dkStatus').value = d.Status || 'Aktif';
   document.getElementById('dkTargetGF').value = d.Target_Hari_GF || '';
   document.getElementById('dkNominalGF').value = d.Nominal_GF_Bulanan || '';
-  document.getElementById('dkJamPraktikGF').value = d.Jam_Praktik_GF || '';
+  document.getElementById('dkJamPraktikGF').value = jamHHMM(d.Jam_Praktik_GF);
   document.getElementById('dkDurasiPraktikGF').value = d.Durasi_Praktik_GF_Menit || '';
   document.getElementById('dkPin').value = '';
   document.getElementById('dkPin').placeholder = d.PIN_Absen_Set ? 'Sudah diset — isi hanya jika ingin ganti' : 'Belum diset';
@@ -434,10 +521,12 @@ async function deleteDokter(id) {
 /* ===== JADWAL ===== */
 async function loadJadwal() {
   const bulan = document.getElementById('jdFilterBulan').value;
-  const j = await api('getJadwal', { bulan });
-  if (!j.ok) return;
+  renderJadwal(await api('getJadwal', { bulan }));
+}
+function renderJadwal(j) {
+  if (!j || !j.ok) return;
   document.getElementById('jadwalBody').innerHTML = j.data.map(r => `
-    <tr><td>${r.Tanggal}</td><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td>
+    <tr><td>${esc(r.Tanggal)}</td><td>${esc(r.Nama_Dokter)}</td><td>${tagHtml(r.Kategori)}</td>
     <td>${r.Jam_Mulai_Rencana||''}-${r.Jam_Selesai_Rencana||''}</td><td>${r.Status}</td>
     <td><button class="btn sm bad" onclick="deleteJadwal('${r.ID_Jadwal}')">Hapus</button></td></tr>
   `).join('') || '<tr><td colspan="6" class="muted">Tidak ada jadwal</td></tr>';
@@ -464,30 +553,32 @@ async function deleteJadwal(id) {
 
 /* ===== TARIF ===== */
 async function loadTarif() {
-  const j1 = await api('getTarifShift');
-  if (j1.ok) document.getElementById('tarifShiftBody').innerHTML = j1.data.map(r => `
+  // TURBO: tiga data tarif diambil bersamaan, bukan bergantian
+  const [j1, j2, j3] = await Promise.all([api('getTarifShift'), api('getTarifManajerial'), api('getShiftConfig')]);
+  renderTarif(j1, j2, j3);
+}
+function renderTarif(j1, j2, j3) {
+  if (j1 && j1.ok) document.getElementById('tarifShiftBody').innerHTML = j1.data.map(r => `
     <tr><td>${tagHtml(r.Kategori)}</td><td>${r.Shift}</td><td>${fmtRp(r.Nominal)}</td><td>${r.Berlaku_Mulai}</td>
       <td>
         <button class="btn sm" onclick='editTarifShift(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Edit</button>
         <button class="btn sm bad" onclick="deleteTarifShift('${r.ID_Tarif}')">Hapus</button>
       </td></tr>
   `).join('');
-  const j2 = await api('getTarifManajerial');
-  if (j2.ok) document.getElementById('tarifManBody').innerHTML = j2.data.map(r => `
-    <tr><td>${r.Jabatan}</td><td>${fmtRp(r.Nominal_Per_Jam)}</td><td>${r.Berlaku_Mulai}</td>
+  if (j2 && j2.ok) document.getElementById('tarifManBody').innerHTML = j2.data.map(r => `
+    <tr><td>${esc(r.Jabatan)}</td><td>${fmtRp(r.Nominal_Per_Jam)}</td><td>${r.Berlaku_Mulai}</td>
       <td>
         <button class="btn sm" onclick='editTarifManajerial(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Edit</button>
         <button class="btn sm bad" onclick="deleteTarifManajerial('${r.ID_Tarif}')">Hapus</button>
       </td></tr>
   `).join('');
-  const j3 = await api('getShiftConfig');
-  if (j3.ok) document.getElementById('shiftConfigBody').innerHTML = j3.data.map((r,i) => `
+  if (j3 && j3.ok) document.getElementById('shiftConfigBody').innerHTML = j3.data.map((r,i) => `
     <tr>
       <td><input value="${r.Nama_Shift}" id="scNama${i}"></td>
-      <td><input type="time" value="${r.Jam_Mulai}" id="scMulai${i}"></td>
-      <td><input type="time" value="${r.Jam_Selesai}" id="scSelesai${i}"></td>
+      <td><input type="time" value="${jamHHMM(r.Jam_Mulai)}" id="scMulai${i}"></td>
+      <td><input type="time" value="${jamHHMM(r.Jam_Selesai)}" id="scSelesai${i}"></td>
     </tr>`).join('');
-  window._shiftConfigCount = j3.ok ? j3.data.length : 0;
+  window._shiftConfigCount = (j3 && j3.ok) ? j3.data.length : 0;
 }
 async function saveTarifShift() {
   const data = {
@@ -571,8 +662,9 @@ async function loadRekap() {
   rekapCache = j.data;
   rekapBulanCache = bulan;
   document.getElementById('rekapBody').innerHTML = j.data.map(r => `
-    <tr><td>${r.nama}</td><td>${tagHtml(r.kategori)}</td><td>${r.jumlah_shift}</td>
-    <td>${r.kategori === 'Manajerial' ? r.total_jam.toFixed(2) : '-'}</td><td>${fmtRp(r.total_nominal)}</td></tr>
+    <tr><td>${esc(r.nama)}${r.sesi_terbuka ? `<br><span class="muted" style="color:#dc3545;">${r.sesi_terbuka} sesi belum Absen Keluar</span>` : ''}</td>
+    <td>${(r.kategori_list || [r.kategori]).map(tagHtml).join(' ')}</td><td>${r.jumlah_shift}</td>
+    <td>${r.total_jam > 0 ? Number(r.total_jam).toFixed(2) : '-'}</td><td>${fmtRp(r.total_nominal)}</td></tr>
   `).join('') || '<tr><td colspan="5" class="muted">Tidak ada data</td></tr>';
   const total = j.data.reduce((a, b) => a + b.total_nominal, 0);
   document.getElementById('rekapTotal').textContent = 'Total seluruh dokter: ' + fmtRp(total);
@@ -583,7 +675,7 @@ function unduhRekapHonorExcel() {
     'Nama Dokter': r.nama,
     'Kategori': r.kategori,
     'Jumlah Shift/Sesi': r.jumlah_shift,
-    'Total Jam (Manajerial)': r.kategori === 'Manajerial' ? Number(r.total_jam.toFixed(2)) : '-',
+    'Total Jam': r.total_jam > 0 ? Number(Number(r.total_jam).toFixed(2)) : '-',
     'Total Honor (Rp)': r.total_nominal
   }));
   const totalHonor = rekapCache.reduce((a, b) => a + b.total_nominal, 0);
@@ -602,10 +694,10 @@ async function loadAbsensiRange() {
   if (!j.ok) return;
   absensiRangeCache = j.data;
   document.getElementById('absensiBody').innerHTML = j.data.map(r => `
-    <tr><td>${r.Tanggal}</td><td>${r.Nama_Dokter}</td><td>${tagHtml(r.Kategori)}</td><td>${r.Shift_Terdeteksi}</td>
-    <td>${r.Jam_Masuk}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
-    <td>${r.Jam_Keluar}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
-    <td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;">${r.Keterangan}</span>` : ''}</td><td>${r.Status_Nominal}</td>
+    <tr><td>${esc(r.Tanggal)}</td><td>${esc(r.Nama_Dokter)}</td><td>${tagHtml(r.Kategori)}</td><td>${esc(r.Shift_Terdeteksi)}</td>
+    <td>${esc(r.Jam_Masuk)}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
+    <td>${r.Jam_Keluar ? esc(r.Jam_Keluar) : '<span class="muted" style="color:#dc3545;">belum keluar</span>'}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
+    <td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;white-space:normal;">${esc(r.Keterangan)}</span>` : ''}</td><td>${esc(r.Status_Nominal)}</td>
     <td><button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button></td></tr>
   `).join('') || '<tr><td colspan="11" class="muted">Tidak ada data</td></tr>';
 }
@@ -652,8 +744,10 @@ async function koreksi(r) {
 
 /* ===== GPS (Super Admin only) ===== */
 async function loadGpsSettings() {
-  const j = await api('getGpsSettings');
-  if (!j.ok) return;
+  renderGps(await api('getGpsSettings'));
+}
+function renderGps(j) {
+  if (!j || !j.ok) return;
   document.getElementById('gpsLat').value = j.lat;
   document.getElementById('gpsLon').value = j.lon;
   document.getElementById('gpsRadius').value = j.radius;
@@ -697,11 +791,13 @@ function pakaiLokasiSaatIni() {
 
 /* ===== AKUN ADMIN (Super Admin only) ===== */
 async function loadAdminUsers() {
-  const j = await api('getAdminUsers');
-  if (!j.ok) return;
+  renderAdminUsers(await api('getAdminUsers'));
+}
+function renderAdminUsers(j) {
+  if (!j || !j.ok) return;
   document.getElementById('akunBody').innerHTML = j.data.map(r => `
-    <tr><td>${r.Nama}</td><td>${r.Role}</td><td>${r.Status}</td>
-    <td><button class="btn sm bad" onclick="deleteAdminUser('${r.Nama}')">Hapus</button></td></tr>
+    <tr><td>${esc(r.Nama)}</td><td>${esc(r.Role)}</td><td>${esc(r.Status)}</td>
+    <td><button class="btn sm bad" onclick="deleteAdminUser('${esc(String(r.Nama).replace(/'/g, "\\'"))}')">Hapus</button></td></tr>
   `).join('') || '<tr><td colspan="4" class="muted">Belum ada akun</td></tr>';
 }
 async function saveAdminUser() {
@@ -723,7 +819,7 @@ async function deleteAdminUser(nama) {
 }
 
 let monitorInterval = null;
-function initApp() {
+async function initApp() {
   const today = new Date();
   const pad = n => String(n).padStart(2, '0');
   const todayStr = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
@@ -731,17 +827,67 @@ function initApp() {
   document.getElementById('rkBulan').value = todayStr.slice(0,7);
   document.getElementById('abDari').value = todayStr;
   document.getElementById('abSampai').value = todayStr;
-  loadMonitor(); loadDokter(); loadJadwal(); loadTarif();
+  await muatSemuaData();
   if (monitorInterval) clearInterval(monitorInterval);
-  monitorInterval = setInterval(loadMonitor, 20000);
+  // Monitoring diperbarui tiap 30 detik, dan berhenti sementara saat tab tidak dibuka (hemat kuota)
+  monitorInterval = setInterval(() => { if (!document.hidden && TOKEN) loadMonitor(); }, 30000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && TOKEN) loadMonitor(); });
+
+// TURBO: semua data awal dashboard diambil dalam SATU permintaan ke server.
+async function muatSemuaData() {
+  document.getElementById('monBody').innerHTML = '<tr><td colspan="9" class="muted">Memuat data...</td></tr>';
+  const j = await api('getAdminBootstrap', { bulan: document.getElementById('jdFilterBulan').value });
+  if (!j.ok) {
+    if (!j.relogin) document.getElementById('monBody').innerHTML = `<tr><td colspan="9" style="color:#dc3545;">${esc(j.error)}</td></tr>`;
+    return;
+  }
+  renderMonitor(j.monitor);
+  renderDokter(j.dokter);
+  renderJadwal(j.jadwal);
+  renderTarif(j.tarifShift, j.tarifManajerial, j.shiftConfig);
+  if (j.gps) renderGps(j.gps);
+  if (j.adminUsers) renderAdminUsers(j.adminUsers);
+}
+
+async function segarkanData() {
+  await api('clearCache');
+  await muatSemuaData();
+  if (document.getElementById('tab-absensi').classList.contains('active')) loadAbsensiRange();
+}
+
+async function cekKesehatan() {
+  const el = document.getElementById('kesehatanHasil');
+  el.innerHTML = '<span class="muted">Memeriksa sistem...</span>';
+  const j = await api('cekKesehatan', {}, 90);
+  if (!j.ok) { el.innerHTML = `<span style="color:#dc3545;">${esc(j.error)}</span>`; return; }
+  const ikon = { ok: '✅', warn: '⚠️', error: '⛔', info: 'ℹ️' };
+  const urut = { error: 0, warn: 1, info: 2, ok: 3 };
+  const data = j.data.slice().sort((a, b) => urut[a.level] - urut[b.level]);
+  const jmlMasalah = data.filter(h => h.level === 'error' || h.level === 'warn').length;
+  el.innerHTML = `<p style="font-weight:700;margin:0 0 8px;">${jmlMasalah ? jmlMasalah + ' hal perlu diperhatikan' : 'Sistem sehat, tidak ada masalah ditemukan'}</p>` +
+    '<ul class="sehat">' + data.map(h => `<li class="${esc(h.level)}">${ikon[h.level] || ''} ${esc(h.pesan)}</li>`).join('') + '</ul>';
 }
 
 function doLogout() {
   if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
-  AKTOR = null; AKTOR_ROLE = null;
+  if (TOKEN) {
+    try { fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'logoutAdmin', token: TOKEN }), keepalive: true }).catch(() => {}); } catch (e) {}
+  }
+  hapusSesi();
+  TOKEN = null; AKTOR = null; AKTOR_ROLE = null;
   // Keluar langsung kembali ke tampilan awal sistem (index.html), bukan cuma ke layar login admin.
   window.location.href = 'index.html';
 }
+
+// Kalau halaman admin di-refresh, login tetap tersimpan selama tab browser belum ditutup.
+(function lanjutkanSesi() {
+  const sesi = bacaSesi();
+  if (sesi && sesi.token) {
+    TOKEN = sesi.token;
+    masukApp(sesi.nama, sesi.role);
+  }
+})();
 </script>
 </body>
 </html>
