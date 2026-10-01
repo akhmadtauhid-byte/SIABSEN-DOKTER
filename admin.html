@@ -350,7 +350,13 @@ async function api(action, data, batasDetik) {
   const t0 = performance.now();
   try {
     const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action, token: TOKEN }, data || {})), signal: ctrl.signal });
-    const j = await res.json();
+    const teks = await res.text();
+    let j;
+    try { j = JSON.parse(teks); }
+    catch (x) {
+      const judul = (teks.match(/<title>([^<]*)<\/title>/i) || [])[1] || '';
+      return { ok: false, error: 'Server Google sedang bermasalah' + (judul ? ' (' + judul + ')' : '') + '. Coba lagi sebentar, atau pastikan sudah Deploy versi terbaru.' };
+    }
     if (j && j.relogin && action !== 'adminLogin') sesiBerakhir(j.error);
     return j;
   } catch (e) {
