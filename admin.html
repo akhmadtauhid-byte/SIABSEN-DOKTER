@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://script.googleusercontent.com">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
-  :root{--pri:#0d6efd;--ok:#198754;--bad:#dc3545;--bg:#f1f5f9;}
+  :root{--pri:#0d6efd;--ok:#198754;--bad:#dc3545;--bg:#f1f5f9;--ink-2:#64748b;}
   *{box-sizing:border-box;}
   body{margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:#1e293b;}
   header{background:#0f172a;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
@@ -22,7 +22,7 @@
   nav{display:flex;gap:6px;padding:10px 16px;background:#fff;overflow-x:auto;border-bottom:1px solid #e2e8f0;}
   nav button{flex:0 0 auto;padding:9px 14px;border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:.85rem;color:#475569;font-weight:600;white-space:nowrap;}
   nav button.active{background:var(--pri);color:#fff;}
-  main{padding:16px;max-width:1100px;margin:0 auto;}
+  main{padding:16px;max-width:1280px;margin:0 auto;}
   .tab{display:none;}
   .tab.active{display:block;}
   .card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:16px;}
@@ -35,6 +35,8 @@
   button.btn.ok{background:var(--ok);}
   button.btn.bad{background:var(--bad);}
   button.btn.sm{padding:5px 10px;font-size:.75rem;}
+  button.btn.ghost{background:#94a3b8;}
+  button.btn.excel{background:#166534;}
   table{width:100%;border-collapse:collapse;font-size:.82rem;}
   th,td{padding:8px 6px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;}
   th{color:#64748b;font-weight:600;background:#f8fafc;}
@@ -46,6 +48,9 @@
   .tag.Spesialis-GF{background:#e0e7ff;color:#3730a3;}
   .tag.Manajerial{background:#ede9fe;color:#5b21b6;}
   .tag.Manajerial---Fungsional{background:#fef3c7;color:#92400e;}
+  .tag.jaga{background:transparent;color:#94a3b8;font-weight:400;font-size:.78rem;padding:0;}
+  .ket{display:block;color:#dc3545;font-size:.78rem;white-space:normal;}
+  .aksi-baris{display:flex;gap:6px;}
   .muted{color:#94a3b8;font-size:.78rem;}
   .totalbar{font-weight:700;margin-top:8px;text-align:right;font-size:.95rem;}
   .scroll-x{overflow-x:auto;}
@@ -79,7 +84,7 @@
     <span class="turbo" id="turbo" title="Waktu respons server terakhir">⚡ Turbo</span>
     <div class="who" id="whoami"></div>
     <button class="btn sm" style="background:#334155" onclick="segarkanData()" title="Muat ulang semua data dari Google Sheets (pakai setelah mengedit sheet secara langsung)">🔄 Segarkan</button>
-    <button class="btn sm" style="background:#dc3545" onclick="doLogout()">Keluar</button>
+    <button class="btn sm bad" onclick="doLogout()">Keluar</button>
   </div>
 </header>
 <nav>
@@ -149,7 +154,7 @@
         <div class="field"><label>PIN Absen (4-8 digit)</label><input id="dkPin" inputmode="numeric" maxlength="8" placeholder="cth: 135790"></div>
       </div>
       <button class="btn" onclick="saveDokter()">Simpan Dokter</button>
-      <button class="btn" style="background:#94a3b8" onclick="resetDokterForm()">Form Baru</button>
+      <button class="btn ghost" onclick="resetDokterForm()">Form Baru</button>
     </div>
     <div class="card">
       <h3>Daftar Dokter</h3>
@@ -197,7 +202,7 @@
         <div class="field"><label>Berlaku Mulai</label><input type="date" id="tsBerlaku"></div>
       </div>
       <button class="btn" onclick="saveTarifShift()">Simpan Tarif Shift</button>
-      <button class="btn" style="background:#94a3b8" onclick="resetTarifShiftForm()">Form Baru</button>
+      <button class="btn ghost" onclick="resetTarifShiftForm()">Form Baru</button>
       <div class="scroll-x" style="margin-top:12px;"><table>
         <thead><tr><th>Kategori</th><th>Shift</th><th>Nominal</th><th>Berlaku Mulai</th><th></th></tr></thead>
         <tbody id="tarifShiftBody"></tbody>
@@ -213,7 +218,7 @@
         <div class="field"><label>Berlaku Mulai</label><input type="date" id="tmBerlaku"></div>
       </div>
       <button class="btn" onclick="saveTarifManajerial()">Simpan Tarif Manajerial</button>
-      <button class="btn" style="background:#94a3b8" onclick="resetTarifManForm()">Form Baru</button>
+      <button class="btn ghost" onclick="resetTarifManForm()">Form Baru</button>
       <div class="scroll-x" style="margin-top:12px;"><table>
         <thead><tr><th>Jabatan</th><th>Nominal/Jam</th><th>Berlaku Mulai</th><th></th></tr></thead>
         <tbody id="tarifManBody"></tbody>
@@ -238,7 +243,7 @@
       <div class="row">
         <div class="field"><label>Bulan</label><input type="month" id="rkBulan"></div>
         <button class="btn" onclick="loadRekap()">Tampilkan</button>
-        <button class="btn" style="background:#166534" onclick="unduhRekapHonorExcel()">📥 Unduh Excel (untuk Direksi)</button>
+        <button class="btn excel" onclick="unduhRekapHonorExcel()">📥 Unduh Excel (untuk Direksi)</button>
       </div>
       <div class="scroll-x"><table>
         <thead><tr><th>Nama</th><th>Kategori</th><th>Jumlah Shift/Sesi</th><th>Total Jam (Manajerial)</th><th>Total Honor</th></tr></thead>
@@ -256,7 +261,7 @@
         <div class="field"><label>Dari</label><input type="date" id="abDari" onchange="loadAbsensiRange()"></div>
         <div class="field"><label>Sampai</label><input type="date" id="abSampai" onchange="loadAbsensiRange()"></div>
         <button class="btn" onclick="loadAbsensiRange()">Cari</button>
-        <button class="btn" style="background:#166534" onclick="unduhRiwayatExcel()">📥 Unduh Excel (untuk Direksi)</button>
+        <button class="btn excel" onclick="unduhRiwayatExcel()">📥 Unduh Excel (untuk Direksi)</button>
         <button class="btn" style="background:#7c3aed" onclick="hitungUlangNominal()" title="Pakai setelah mengisi/memperbaiki tarif. Baris yang sudah dikoreksi manual tidak diubah.">🔁 Hitung Ulang Nominal</button>
       </div>
       <div class="scroll-x"><table>
@@ -277,7 +282,7 @@
         <div class="field"><label>Radius (meter)</label><input type="number" id="gpsRadius" placeholder="cth: 200"></div>
       </div>
       <button class="btn" onclick="saveGpsSettings()">Simpan Lokasi</button>
-      <button class="btn" style="background:#94a3b8" onclick="pakaiLokasiSaatIni()">Isi dari Lokasi Perangkat Ini</button>
+      <button class="btn ghost" onclick="pakaiLokasiSaatIni()">Isi dari Lokasi Perangkat Ini</button>
       <p class="map-hint">Tips: cari titik RS di <a href="https://www.google.com/maps" target="_blank" rel="noopener">Google Maps</a>, klik kanan lokasi persis di peta, lalu klik angka koordinat yang muncul untuk menyalinnya, dan tempel ke kolom Latitude/Longitude di atas. Atau, kalau perangkat ini sedang berada di lokasi RS, klik tombol "Isi dari Lokasi Perangkat Ini".</p>
       <div id="gpsMsg" class="muted" style="margin-top:10px;"></div>
     </div>
@@ -383,7 +388,7 @@ function sesiBerakhir(pesan) {
   document.getElementById('pinInput').value = '';
   const m = document.getElementById('loginMsg');
   m.textContent = pesan || 'Sesi login berakhir, silakan login ulang.';
-  m.style.color = '#dc3545';
+  m.style.color = 'var(--bad)';
 }
 
 async function doLogin() {
@@ -391,7 +396,7 @@ async function doLogin() {
   if (btn.disabled) return;
   const pin = document.getElementById('pinInput').value.trim();
   const m = document.getElementById('loginMsg');
-  if (!pin) { m.textContent = 'Masukkan PIN'; m.style.color = '#dc3545'; return; }
+  if (!pin) { m.textContent = 'Masukkan PIN'; m.style.color = 'var(--bad)'; return; }
   btn.disabled = true; btn.textContent = 'Memproses...';
   m.textContent = '';
   const j = await api('adminLogin', { pin });
@@ -402,7 +407,7 @@ async function doLogin() {
     masukApp(j.nama, j.role);
   } else {
     m.textContent = j.error;
-    m.style.color = '#dc3545';
+    m.style.color = 'var(--bad)';
   }
 }
 document.getElementById('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
@@ -446,10 +451,10 @@ function renderMonitor(j) {
   if (!j || !j.ok) return;
   document.getElementById('monTanggal').textContent = j.tanggal;
   document.getElementById('monBody').innerHTML = j.data.map(r => `
-    <tr><td>${esc(r.Nama_Dokter)}${r.Tanggal !== j.tanggal ? `<br><span class="muted">masuk ${esc(r.Tanggal)}</span>` : ''}</td><td>${tagHtml(r.Kategori)}</td><td>${esc(r.Shift_Terdeteksi)}</td>
+    <tr><td>${esc(r.Nama_Dokter)}${r.Tanggal !== j.tanggal ? `<br><span class="muted">masuk ${esc(r.Tanggal)}</span>` : ''}</td><td>${tagHtml(r.Kategori)}</td><td class="shift">${esc(r.Shift_Terdeteksi)}</td>
     <td>${esc(r.Jam_Masuk)}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
     <td>${r.Jam_Keluar ? esc(r.Jam_Keluar) : '<span class="muted">belum keluar</span>'}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
-    <td>${r.Durasi_Jam || '-'}</td><td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;white-space:normal;">${esc(r.Keterangan)}</span>` : ''}</td></tr>
+    <td>${r.Durasi_Jam || '-'}</td><td>${fmtRp(r.Nominal)}${r.Keterangan ? `<span class="ket">${esc(r.Keterangan)}</span>` : ''}</td></tr>
   `).join('') || '<tr><td colspan="9" class="muted">Belum ada absensi hari ini</td></tr>';
 }
 
@@ -669,7 +674,7 @@ async function loadRekap() {
   rekapCache = j.data;
   rekapBulanCache = bulan;
   document.getElementById('rekapBody').innerHTML = j.data.map(r => `
-    <tr><td>${esc(r.nama)}${r.sesi_terbuka ? `<br><span class="muted" style="color:#dc3545;">${r.sesi_terbuka} sesi belum Absen Keluar</span>` : ''}</td>
+    <tr><td>${esc(r.nama)}${r.sesi_terbuka ? `<span class="ket">${r.sesi_terbuka} sesi belum Absen Keluar</span>` : ''}</td>
     <td>${(r.kategori_list || [r.kategori]).map(tagHtml).join(' ')}</td><td>${r.jumlah_shift}</td>
     <td>${r.total_jam > 0 ? Number(r.total_jam).toFixed(2) : '-'}</td><td>${fmtRp(r.total_nominal)}</td></tr>
   `).join('') || '<tr><td colspan="5" class="muted">Tidak ada data</td></tr>';
@@ -701,11 +706,11 @@ async function loadAbsensiRange() {
   if (!j.ok) return;
   absensiRangeCache = j.data;
   document.getElementById('absensiBody').innerHTML = j.data.map(r => `
-    <tr><td>${esc(r.Tanggal)}</td><td>${esc(r.Nama_Dokter)}</td><td>${tagHtml(r.Kategori)}</td><td>${esc(r.Shift_Terdeteksi)}</td>
+    <tr><td>${esc(r.Tanggal)}</td><td>${esc(r.Nama_Dokter)}</td><td>${tagHtml(r.Kategori)}</td><td class="shift">${esc(r.Shift_Terdeteksi)}</td>
     <td>${esc(r.Jam_Masuk)}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
-    <td>${r.Jam_Keluar ? esc(r.Jam_Keluar) : '<span class="muted" style="color:#dc3545;">belum keluar</span>'}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
-    <td>${fmtRp(r.Nominal)}${r.Keterangan ? `<br><span class="muted" style="color:#dc3545;white-space:normal;">${esc(r.Keterangan)}</span>` : ''}</td><td>${esc(r.Status_Nominal)}</td>
-    <td><button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button></td></tr>
+    <td>${r.Jam_Keluar ? esc(r.Jam_Keluar) : '<span class="muted">belum keluar</span>'}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
+    <td>${fmtRp(r.Nominal)}${r.Keterangan ? `<span class="ket">${esc(r.Keterangan)}</span>` : ''}</td><td>${esc(r.Status_Nominal)}</td>
+    <td><div class="aksi-baris"><button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button>${AKTOR_ROLE === 'Super Admin' ? `<button class="btn sm bad" onclick='hapusAbsensi(${JSON.stringify({ id: r.ID_Absen, nama: r.Nama_Dokter, tgl: r.Tanggal, masuk: r.Jam_Masuk, nominal: r.Nominal }).replace(/'/g,"&apos;")})'>Hapus</button>` : ''}</div></td></tr>
   `).join('') || '<tr><td colspan="11" class="muted">Tidak ada data</td></tr>';
 }
 function unduhRiwayatExcel() {
@@ -757,6 +762,17 @@ async function hitungUlangNominal() {
   loadAbsensiRange();
 }
 
+// Hapus satu baris riwayat absensi (khusus Super Admin). Isi baris tetap tercatat di Log_Aktivitas.
+async function hapusAbsensi(r) {
+  const ok = confirm('Hapus absensi ini?\n\n' + r.nama + '\nTanggal ' + r.tgl + ', masuk ' + r.masuk + '\nNominal ' + fmtRp(r.nominal) +
+    '\n\nData honornya ikut hilang dari rekap. Isi baris tetap tersimpan di Log Aktivitas, dan foto bukti di Google Drive tidak dihapus.');
+  if (!ok) return;
+  const alasan = prompt('Alasan menghapus (opsional, dicatat di log):', '');
+  if (alasan === null) return;
+  const j = await api('deleteAbsensi', { id: r.id, alasan });
+  if (j.ok) loadAbsensiRange(); else alert(j.error);
+}
+
 async function koreksi(r) {
   const nominalBaru = prompt('Koreksi nominal untuk ' + r.Nama_Dokter + ' (' + r.Tanggal + '):', r.Nominal);
   if (nominalBaru === null) return;
@@ -786,27 +802,27 @@ async function saveGpsSettings() {
   const msgEl = document.getElementById('gpsMsg');
   if (j.ok) {
     msgEl.textContent = 'Pengaturan berhasil disimpan. Dokter akan langsung memakai nilai baru ini di absen berikutnya.';
-    msgEl.style.color = '#166534';
+    msgEl.style.color = 'var(--ok)';
   } else {
     msgEl.textContent = j.error;
-    msgEl.style.color = '#dc3545';
+    msgEl.style.color = 'var(--bad)';
   }
 }
 function pakaiLokasiSaatIni() {
   if (!navigator.geolocation) return alert('Perangkat ini tidak mendukung GPS');
   const msgEl = document.getElementById('gpsMsg');
   msgEl.textContent = 'Mengambil lokasi perangkat ini...';
-  msgEl.style.color = '#64748b';
+  msgEl.style.color = 'var(--ink-2)';
   navigator.geolocation.getCurrentPosition(
     pos => {
       document.getElementById('gpsLat').value = pos.coords.latitude.toFixed(6);
       document.getElementById('gpsLon').value = pos.coords.longitude.toFixed(6);
       msgEl.textContent = 'Lokasi perangkat ini terisi (akurasi ~' + Math.round(pos.coords.accuracy) + 'm). Periksa dulu lalu klik Simpan Lokasi.';
-      msgEl.style.color = '#166534';
+      msgEl.style.color = 'var(--ok)';
     },
     err => {
       msgEl.textContent = 'Gagal ambil lokasi: ' + err.message;
-      msgEl.style.color = '#dc3545';
+      msgEl.style.color = 'var(--bad)';
     },
     { enableHighAccuracy: true, timeout: 15000 }
   );
@@ -862,7 +878,7 @@ async function muatSemuaData() {
   document.getElementById('monBody').innerHTML = '<tr><td colspan="9" class="muted">Memuat data...</td></tr>';
   const j = await api('getAdminBootstrap', { bulan: document.getElementById('jdFilterBulan').value });
   if (!j.ok) {
-    if (!j.relogin) document.getElementById('monBody').innerHTML = `<tr><td colspan="9" style="color:#dc3545;">${esc(j.error)}</td></tr>`;
+    if (!j.relogin) document.getElementById('monBody').innerHTML = `<tr><td colspan="9" style="color:var(--bad);">${esc(j.error)}</td></tr>`;
     return;
   }
   renderMonitor(j.monitor);
@@ -883,7 +899,7 @@ async function cekKesehatan() {
   const el = document.getElementById('kesehatanHasil');
   el.innerHTML = '<span class="muted">Memeriksa sistem...</span>';
   const j = await api('cekKesehatan', {}, 90);
-  if (!j.ok) { el.innerHTML = `<span style="color:#dc3545;">${esc(j.error)}</span>`; return; }
+  if (!j.ok) { el.innerHTML = `<span style="color:var(--bad);">${esc(j.error)}</span>`; return; }
   const ikon = { ok: '✅', warn: '⚠️', error: '⛔', info: 'ℹ️' };
   const urut = { error: 0, warn: 1, info: 2, ok: 3 };
   const data = j.data.slice().sort((a, b) => urut[a.level] - urut[b.level]);
