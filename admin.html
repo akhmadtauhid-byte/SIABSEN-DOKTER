@@ -732,14 +732,17 @@ function renderRekap() {
   if (!rekapBulanCache) return;
   const data = rekapTersaring();
   document.getElementById('rekapBody').innerHTML = data.map(r => `
-    <tr><td>${esc(r.nama)}${r.sesi_terbuka ? `<span class="ket">${r.sesi_terbuka} sesi belum Absen Keluar</span>` : ''}</td>
+    <tr><td>${esc(r.nama)}${r.sesi_ditahan ? `<span class="ket">⏸ ${r.sesi_ditahan} sesi lupa Absen Keluar — ${fmtRp(r.nominal_ditahan)} ditahan, perlu verifikasi</span>` : ''}${r.sesi_terbuka ? `<span class="muted" style="display:block;">${r.sesi_terbuka} sesi masih jaga</span>` : ''}</td>
     <td>${(r.kategori_list || [r.kategori]).map(tagHtml).join(' ')}</td><td>${r.jumlah_shift}</td>
     <td>${r.total_jam > 0 ? Number(r.total_jam).toFixed(2) : '-'}</td><td>${fmtRp(r.total_nominal)}</td>
     <td><button class="btn sm" onclick='lihatRincian(${JSON.stringify(r.nama).replace(/'/g, "&apos;")})'>Rincian</button></td></tr>
   `).join('') || `<tr><td colspan="6" class="muted">${rekapCache.length ? 'Tidak ada dokter yang cocok dengan pencarian' : 'Tidak ada data'}</td></tr>`;
   const total = data.reduce((a, b) => a + b.total_nominal, 0);
   const tersaring = data.length !== rekapCache.length;
-  document.getElementById('rekapTotal').textContent = (tersaring ? 'Total ' + data.length + ' dokter terpilih: ' : 'Total seluruh dokter: ') + fmtRp(total);
+  const ditahan = data.reduce((a, b) => a + (b.nominal_ditahan || 0), 0);
+  const sesiDitahan = data.reduce((a, b) => a + (b.sesi_ditahan || 0), 0);
+  document.getElementById('rekapTotal').textContent = (tersaring ? 'Total ' + data.length + ' dokter terpilih: ' : 'Total seluruh dokter: ') + fmtRp(total) +
+    (sesiDitahan ? '  (belum termasuk ' + fmtRp(ditahan) + ' ditahan dari ' + sesiDitahan + ' sesi lupa Absen Keluar)' : '');
 }
 // Rincian: buka Riwayat Absensi dokter tersebut untuk bulan yang sedang direkap
 function lihatRincian(nama) {
@@ -759,11 +762,14 @@ function unduhRekapHonorExcel() {
     'Kategori': r.kategori,
     'Jumlah Shift/Sesi': r.jumlah_shift,
     'Total Jam': r.total_jam > 0 ? Number(Number(r.total_jam).toFixed(2)) : '-',
-    'Total Honor (Rp)': r.total_nominal
+    'Total Honor (Rp)': r.total_nominal,
+    'Sesi Lupa Absen Keluar': r.sesi_ditahan || 0,
+    'Honor Ditahan (Rp)': r.nominal_ditahan || 0
   }));
   const totalHonor = dataRekap.reduce((a, b) => a + b.total_nominal, 0);
+  const totalDitahan = dataRekap.reduce((a, b) => a + (b.nominal_ditahan || 0), 0);
   rows.push({});
-  rows.push({ 'Nama Dokter': dataRekap.length === rekapCache.length ? 'TOTAL SELURUH DOKTER' : 'TOTAL ' + dataRekap.length + ' DOKTER TERPILIH', 'Total Honor (Rp)': totalHonor });
+  rows.push({ 'Nama Dokter': dataRekap.length === rekapCache.length ? 'TOTAL SELURUH DOKTER' : 'TOTAL ' + dataRekap.length + ' DOKTER TERPILIH', 'Total Honor (Rp)': totalHonor, 'Honor Ditahan (Rp)': totalDitahan });
   unduhExcel(rows, 'Rekap Honor Bulanan — RSU Allam Medica (' + rekapBulanCache + ')',
     'Rekap_Honor_Dokter_' + rekapBulanCache);
 }
@@ -784,14 +790,16 @@ function riwayatTersaring() {
 }
 function renderRiwayat() {
   const data = riwayatTersaring();
-  const totalR = data.reduce((a, b) => a + (Number(b.Nominal) || 0), 0);
-  document.getElementById('riwayatTotal').textContent = data.length ? data.length + ' absensi, total honor ' + fmtRp(totalR) : '';
+  const totalR = data.filter(r => !r.Perlu_Verifikasi).reduce((a, b) => a + (Number(b.Nominal) || 0), 0);
+  const ditahanR = data.filter(r => r.Perlu_Verifikasi);
+  document.getElementById('riwayatTotal').textContent = data.length ? data.length + ' absensi, total honor ' + fmtRp(totalR) +
+    (ditahanR.length ? '  (' + ditahanR.length + ' sesi lupa Absen Keluar, ' + fmtRp(ditahanR.reduce((a, b) => a + (Number(b.Nominal) || 0), 0)) + ' ditahan)' : '') : '';
   document.getElementById('absensiBody').innerHTML = data.map(r => `
     <tr><td>${esc(r.Tanggal)}</td><td>${esc(r.Nama_Dokter)}</td><td>${tagHtml(r.Kategori)}</td><td class="shift">${esc(r.Shift_Terdeteksi)}</td>
     <td>${esc(r.Jam_Masuk)}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
-    <td>${r.Jam_Keluar ? esc(r.Jam_Keluar) : '<span class="muted">belum keluar</span>'}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
-    <td>${fmtRp(r.Nominal)}${r.Keterangan ? `<span class="ket">${esc(r.Keterangan)}</span>` : ''}</td><td>${esc(r.Status_Nominal)}</td>
-    <td><div class="aksi-baris"><button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button>${AKTOR_ROLE === 'Super Admin' ? `<button class="btn sm bad" onclick='hapusAbsensi(${JSON.stringify({ id: r.ID_Absen, nama: r.Nama_Dokter, tgl: r.Tanggal, masuk: r.Jam_Masuk, nominal: r.Nominal }).replace(/'/g,"&apos;")})'>Hapus</button>` : ''}</div></td></tr>
+    <td>${r.Jam_Keluar ? esc(r.Jam_Keluar) : (r.Perlu_Verifikasi ? '<span class="tag IGD">lupa keluar</span>' : '<span class="muted">belum keluar</span>')}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
+    <td>${fmtRp(r.Nominal)}${r.Keterangan ? `<span class="ket">${esc(r.Keterangan)}</span>` : ''}</td><td>${r.Perlu_Verifikasi ? '<span class="tag IGD" title="Dokter lupa Absen Keluar — honor ditahan sampai jam keluar diisi">Perlu verifikasi</span>' : esc(r.Status_Nominal)}</td>
+    <td><div class="aksi-baris">${!r.Jam_Keluar ? `<button class="btn sm ok" onclick='isiJamKeluar(${JSON.stringify({ id: r.ID_Absen, nama: r.Nama_Dokter, tgl: r.Tanggal, masuk: r.Jam_Masuk }).replace(/'/g,"&apos;")})'>Isi Jam Keluar</button>` : ''}<button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button>${AKTOR_ROLE === 'Super Admin' ? `<button class="btn sm bad" onclick='hapusAbsensi(${JSON.stringify({ id: r.ID_Absen, nama: r.Nama_Dokter, tgl: r.Tanggal, masuk: r.Jam_Masuk, nominal: r.Nominal }).replace(/'/g,"&apos;")})'>Hapus</button>` : ''}</div></td></tr>
   `).join('') || `<tr><td colspan="11" class="muted">${absensiRangeCache.length ? 'Tidak ada dokter yang cocok dengan pencarian' : 'Tidak ada data'}</td></tr>`;
 }
 function unduhRiwayatExcel() {
@@ -808,12 +816,14 @@ function unduhRiwayatExcel() {
     'Jam Keluar': r.Jam_Keluar,
     'Durasi (Jam)': r.Durasi_Jam || '',
     'Nominal (Rp)': Number(r.Nominal) || 0,
-    'Status Nominal': r.Status_Nominal,
+    'Status Nominal': r.Perlu_Verifikasi ? 'Perlu Verifikasi (lupa Absen Keluar, honor ditahan)' : r.Status_Nominal,
     'Keterangan': r.Keterangan || ''
   }));
-  const totalNominal = dataRiwayat.reduce((a, b) => a + (Number(b.Nominal) || 0), 0);
+  const totalNominal = dataRiwayat.filter(r => !r.Perlu_Verifikasi).reduce((a, b) => a + (Number(b.Nominal) || 0), 0);
+  const totalDitahanR = dataRiwayat.filter(r => r.Perlu_Verifikasi).reduce((a, b) => a + (Number(b.Nominal) || 0), 0);
   rows.push({});
-  rows.push({ 'Tanggal': 'TOTAL', 'Nominal (Rp)': totalNominal });
+  rows.push({ 'Tanggal': 'TOTAL DIBAYAR', 'Nominal (Rp)': totalNominal });
+  if (totalDitahanR) rows.push({ 'Tanggal': 'DITAHAN (lupa Absen Keluar)', 'Nominal (Rp)': totalDitahanR });
   unduhExcel(rows, 'Riwayat Absensi Dokter — RSU Allam Medica (' + dari + ' s/d ' + sampai + ')',
     'Riwayat_Absensi_' + dari + '_sd_' + sampai);
 }
@@ -853,6 +863,22 @@ async function hapusAbsensi(r) {
   if (alasan === null) return;
   const j = await api('deleteAbsensi', { id: r.id, alasan });
   if (j.ok) loadAbsensiRange(); else alert(j.error);
+}
+
+// Admin mengisi jam keluar untuk sesi yang dokternya lupa Absen Keluar
+async function isiJamKeluar(r) {
+  const jam = prompt('Jam keluar sebenarnya untuk ' + r.nama + '\n(masuk ' + r.tgl + ' pukul ' + String(r.masuk).slice(0, 5) + ')\n\nFormat JJ:MM, contoh 14:00', '');
+  if (jam === null) return;
+  if (!/^\d{1,2}:\d{2}$/.test(jam.trim())) return alert('Format jam harus JJ:MM, contoh 14:00');
+  const menit = x => { const p = String(x).split(':'); return (+p[0]) * 60 + (+p[1] || 0); };
+  let tgl = r.tgl;
+  if (menit(jam) < menit(r.masuk)) { const d = new Date(r.tgl + 'T12:00:00'); d.setDate(d.getDate() + 1); tgl = d.toISOString().slice(0, 10); }
+  const tglK = prompt('Tanggal keluar (TTTT-BB-HH).\nSudah diisi otomatis — ubah hanya bila perlu:', tgl);
+  if (tglK === null) return;
+  const j = await api('isiJamKeluar', { id: r.id, jam_keluar: jam.trim(), tanggal_keluar: tglK.trim() });
+  if (!j.ok) return alert(j.error);
+  alert('Jam keluar tersimpan.\nDurasi ' + j.durasi_jam + ' jam, honor ' + fmtRp(j.nominal) + '.\nHonor sesi ini tidak ditahan lagi dan sudah masuk rekap.');
+  loadAbsensiRange();
 }
 
 async function koreksi(r) {
