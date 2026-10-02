@@ -256,16 +256,32 @@ function terapkanDaftarDokter(data, keepSelected) {
 // TURBO: daftar dokter langsung tampil dari simpanan perangkat (tanpa menunggu server),
 // lalu diperbarui diam-diam di belakang layar dari server.
 const KUNCI_SIMPAN = 'siabsen_dokter_v3';
+const KUNCI_KATEGORI = 'siabsen_kategori_v3';
+
+// Pilihan "Status jaga hari ini" mengikuti daftar kategori yang diatur Super Admin.
+function isiPilihanKategori(list) {
+  if (!Array.isArray(list) || !list.length) return;
+  const sel = document.getElementById('selPeran');
+  const v = sel.value;
+  sel.innerHTML = '<option value="">-- Pilih status jaga --</option>' +
+    list.map(k => `<option value="${esc(k.nama)}">${esc(k.nama === 'Spesialis (GF)' ? 'Spesialis (Guarantee Fee)' : k.nama)}</option>`).join('');
+  if (list.some(k => k.nama === v)) sel.value = v;
+}
 async function loadDokterList() {
   const sel = document.getElementById('selDokter');
   let adaSimpanan = false;
   try { lokasiRS = JSON.parse(localStorage.getItem('siabsen_lokasi_rs') || 'null'); } catch (e) {}
+  try { isiPilihanKategori(JSON.parse(localStorage.getItem(KUNCI_KATEGORI) || 'null')); } catch (e) {}
   try {
     const simpan = JSON.parse(localStorage.getItem(KUNCI_SIMPAN) || 'null');
     if (simpan && Array.isArray(simpan) && simpan.length) { terapkanDaftarDokter(simpan, false); adaSimpanan = true; }
   } catch (e) { /* penyimpanan perangkat tidak tersedia — lanjut ambil dari server */ }
   try {
     const j = await api('getDokterList');
+    if (j.ok && j.kategori) {
+      isiPilihanKategori(j.kategori);
+      try { localStorage.setItem(KUNCI_KATEGORI, JSON.stringify(j.kategori)); } catch (e) {}
+    }
     if (j.ok && j.lokasi) {
       lokasiRS = j.lokasi;
       try { localStorage.setItem('siabsen_lokasi_rs', JSON.stringify(j.lokasi)); } catch (e) {}
@@ -342,7 +358,7 @@ async function absen(mode) {
   const pin = document.getElementById('pin').value;
   const peran = document.getElementById('selPeran').value;
   if (!idDokter) return setMsg('Pilih nama dokter dahulu', 'bad');
-  if (mode === 'masuk' && !peran) return setMsg('Pilih dulu status jaga hari ini (IGD/Bangsal/Poli Umum/Manajerial/Manajerial & Fungsional/Spesialis GF)', 'bad');
+  if (mode === 'masuk' && !peran) return setMsg('Pilih dulu status jaga hari ini', 'bad');
   if (!pin) return setMsg('Masukkan PIN', 'bad');
   if (!camReady) return setMsg('Kamera belum siap', 'bad');
   if (currentLat === null || currentLon === null) return setMsg('Lokasi GPS belum terkunci, tunggu sebentar', 'bad');
@@ -380,8 +396,9 @@ async function absen(mode) {
       detail += `\nJarak dari RS: ${j.jarak_meter} m (akurasi GPS ±${Math.round(currentAcc)} m)`;
       detail += `\nNominal: Rp ${Number(j.nominal || 0).toLocaleString('id-ID')}`;
       if (j.keterangan) detail += `\n⚠️ ${j.keterangan}`;
+      if (j.peringatan) detail += `\n\n⏸ ${j.peringatan}`;
       detail += `\n⚡ tersimpan dalam ${((Date.now() - mulai) / 1000).toFixed(1)} detik`;
-      setMsg(detail, j.telat_menit > 0 ? 'bad' : 'ok');
+      setMsg(detail, (j.telat_menit > 0 || j.peringatan) ? 'bad' : 'ok');
       document.getElementById('pin').value = '';
       document.getElementById('selPeran').value = '';
       if (j.foto_token && fotoBase64) unggahFotoLatar(j.foto_token, fotoBase64);
