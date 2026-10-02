@@ -41,7 +41,7 @@
   th,td{padding:8px 6px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;}
   th{color:#64748b;font-weight:600;background:#f8fafc;}
   tr:hover{background:#f8fafc;}
-  .tag{padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700;white-space:nowrap;}
+  .tag{padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700;white-space:nowrap;background:#e2e8f0;color:#334155;}
   .tag.IGD{background:#fee2e2;color:#991b1b;}
   .tag.Bangsal{background:#dbeafe;color:#1e40af;}
   .tag.Poli-Umum{background:#dcfce7;color:#166534;}
@@ -94,6 +94,7 @@
   <button data-tab="tarif">Tarif &amp; Shift</button>
   <button data-tab="rekap">Rekap Honor</button>
   <button data-tab="absensi">Riwayat Absensi</button>
+  <button data-tab="kategori" id="navKategori" style="display:none;">Kategori</button>
   <button data-tab="gps" id="navGps" style="display:none;">Lokasi GPS</button>
   <button data-tab="akun" id="navAkun" style="display:none;">Akun Admin</button>
 </nav>
@@ -193,7 +194,7 @@
   <!-- TARIF -->
   <div class="tab" id="tab-tarif">
     <div class="card">
-      <h3>Tarif per Shift (IGD / Bangsal / Poli Umum / Manajerial &amp; Fungsional)</h3>
+      <h3>Tarif per Shift</h3>
       <input type="hidden" id="tsId">
       <div class="row">
         <div class="field"><label>Kategori</label><select id="tsKategori"><option>IGD</option><option>Bangsal</option><option>Poli Umum</option><option>Manajerial & Fungsional</option></select></div>
@@ -245,8 +246,12 @@
         <button class="btn" onclick="loadRekap()">Tampilkan</button>
         <button class="btn excel" onclick="unduhRekapHonorExcel()">📥 Unduh Excel (untuk Direksi)</button>
       </div>
+      <div class="row">
+        <div class="field" style="flex:1 1 320px;"><label>Cari dokter</label><input type="search" id="rkCari" placeholder="Ketik nama dokter..." oninput="renderRekap()" autocomplete="off"></div>
+        <div class="field"><label>Kategori</label><select id="rkKategori" onchange="renderRekap()"><option value="">Semua kategori</option></select></div>
+      </div>
       <div class="scroll-x"><table>
-        <thead><tr><th>Nama</th><th>Kategori</th><th>Jumlah Shift/Sesi</th><th>Total Jam (Manajerial)</th><th>Total Honor</th></tr></thead>
+        <thead><tr><th>Nama</th><th>Kategori</th><th>Jumlah Shift/Sesi</th><th>Total Jam</th><th>Total Honor</th><th></th></tr></thead>
         <tbody id="rekapBody"></tbody>
       </table></div>
       <div class="totalbar" id="rekapTotal"></div>
@@ -260,14 +265,50 @@
       <div class="row">
         <div class="field"><label>Dari</label><input type="date" id="abDari" onchange="loadAbsensiRange()"></div>
         <div class="field"><label>Sampai</label><input type="date" id="abSampai" onchange="loadAbsensiRange()"></div>
-        <button class="btn" onclick="loadAbsensiRange()">Cari</button>
+        <button class="btn" onclick="loadAbsensiRange()">Tampilkan</button>
         <button class="btn excel" onclick="unduhRiwayatExcel()">📥 Unduh Excel (untuk Direksi)</button>
         <button class="btn" style="background:#7c3aed" onclick="hitungUlangNominal()" title="Pakai setelah mengisi/memperbaiki tarif. Baris yang sudah dikoreksi manual tidak diubah.">🔁 Hitung Ulang Nominal</button>
+      </div>
+      <div class="row">
+        <div class="field" style="flex:1 1 320px;"><label>Cari dokter</label><input type="search" id="abCari" placeholder="Ketik nama dokter..." oninput="renderRiwayat()" autocomplete="off"></div>
       </div>
       <div class="scroll-x"><table>
         <thead><tr><th>Tgl</th><th>Nama</th><th>Kategori</th><th>Shift</th><th>Masuk</th><th>Foto Masuk</th><th>Keluar</th><th>Foto Keluar</th><th>Nominal</th><th>Status</th><th></th></tr></thead>
         <tbody id="absensiBody"></tbody>
       </table></div>
+      <div class="totalbar" id="riwayatTotal"></div>
+    </div>
+  </div>
+
+  <!-- KATEGORI (khusus Super Admin) -->
+  <div class="tab" id="tab-kategori">
+    <div class="card">
+      <h3 id="ktJudul">Tambah Kategori Jaga</h3>
+      <input type="hidden" id="ktNamaLama">
+      <div class="row">
+        <div class="field"><label>Nama kategori</label><input id="ktNama" maxlength="40" placeholder="cth: Poli Spesialis"></div>
+        <div class="field"><label>Cara hitung honor</label><select id="ktMetode" onchange="ubahMetodeKategori()">
+          <option value="SHIFT">Per shift (tarif dari menu Tarif per Shift)</option>
+          <option value="PER_JAM">Per jam (tarif per jam × lama jaga)</option>
+          <option value="GF">Guarantee Fee per kedatangan</option>
+        </select></div>
+        <div class="field" id="ktTarifBox"><label>Tarif per jam (Rp)</label><input type="number" id="ktTarif" placeholder="kosong = pakai Tarif Manajerial"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Urutan tampil di halaman absen</label><input type="number" id="ktUrutan" placeholder="cth: 7"></div>
+        <div class="field"><label>Status</label><select id="ktStatus"><option>Aktif</option><option>Nonaktif</option></select></div>
+      </div>
+      <p class="muted" id="ktPenjelasan" style="margin-top:0;"></p>
+      <button class="btn" id="ktTombol" onclick="saveKategori()">Simpan Kategori</button>
+      <button class="btn ghost" onclick="resetKategoriForm()">Form Baru</button>
+    </div>
+    <div class="card">
+      <h3>Daftar Kategori</h3>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Urutan</th><th>Kategori</th><th>Cara hitung honor</th><th>Status</th><th></th></tr></thead>
+        <tbody id="kategoriBody"></tbody>
+      </table></div>
+      <p class="muted">Klik Edit untuk mengubah nama, cara hitung honor, urutan, atau status. Kalau nama diganti, nama lama di riwayat absensi, tarif, data dokter, dan jadwal ikut diganti otomatis. Kategori yang sudah pernah dipakai tidak bisa dihapus — ubah statusnya menjadi Nonaktif agar tidak muncul lagi di halaman absen.</p>
     </div>
   </div>
 
@@ -421,6 +462,7 @@ function masukApp(nama, role) {
   const superAdmin = role === 'Super Admin';
   document.getElementById('navAkun').style.display = superAdmin ? 'inline-block' : 'none';
   document.getElementById('navGps').style.display = superAdmin ? 'inline-block' : 'none';
+  document.getElementById('navKategori').style.display = superAdmin ? 'inline-block' : 'none';
   initApp();
 }
 
@@ -483,7 +525,7 @@ function populateDokterSelect() {
 function editDokter(d) {
   document.getElementById('dkId').value = d.ID_Dokter;
   document.getElementById('dkNama').value = d.Nama;
-  document.getElementById('dkKategori').value = d.Kategori_Default;
+  setPilihan('dkKategori', d.Kategori_Default);
   document.getElementById('dkJabatan').value = d.Jabatan_Manajerial || '';
   document.getElementById('dkSip').value = d.SIP || '';
   document.getElementById('dkHp').value = d.No_HP || '';
@@ -606,7 +648,7 @@ async function saveTarifShift() {
 }
 function editTarifShift(r) {
   document.getElementById('tsId').value = r.ID_Tarif;
-  document.getElementById('tsKategori').value = r.Kategori;
+  setPilihan('tsKategori', r.Kategori);
   document.getElementById('tsShift').value = r.Shift;
   document.getElementById('tsNominal').value = r.Nominal;
   document.getElementById('tsBerlaku').value = r.Berlaku_Mulai;
@@ -673,26 +715,55 @@ async function loadRekap() {
   if (!j.ok) return alert(j.error);
   rekapCache = j.data;
   rekapBulanCache = bulan;
-  document.getElementById('rekapBody').innerHTML = j.data.map(r => `
+  // isi pilihan kategori dari data bulan ini
+  const kats = [...new Set(j.data.flatMap(r => r.kategori_list || [r.kategori]))].filter(Boolean).sort();
+  const selK = document.getElementById('rkKategori'); const vK = selK.value;
+  selK.innerHTML = '<option value="">Semua kategori</option>' + kats.map(k => `<option>${esc(k)}</option>`).join('');
+  if (kats.includes(vK)) selK.value = vK;
+  renderRekap();
+}
+// Data rekap yang tampil = hasil pencarian nama + filter kategori
+function rekapTersaring() {
+  const q = (document.getElementById('rkCari').value || '').trim().toLowerCase();
+  const k = document.getElementById('rkKategori').value;
+  return rekapCache.filter(r => (!q || String(r.nama).toLowerCase().includes(q)) && (!k || (r.kategori_list || [r.kategori]).includes(k)));
+}
+function renderRekap() {
+  if (!rekapBulanCache) return;
+  const data = rekapTersaring();
+  document.getElementById('rekapBody').innerHTML = data.map(r => `
     <tr><td>${esc(r.nama)}${r.sesi_terbuka ? `<span class="ket">${r.sesi_terbuka} sesi belum Absen Keluar</span>` : ''}</td>
     <td>${(r.kategori_list || [r.kategori]).map(tagHtml).join(' ')}</td><td>${r.jumlah_shift}</td>
-    <td>${r.total_jam > 0 ? Number(r.total_jam).toFixed(2) : '-'}</td><td>${fmtRp(r.total_nominal)}</td></tr>
-  `).join('') || '<tr><td colspan="5" class="muted">Tidak ada data</td></tr>';
-  const total = j.data.reduce((a, b) => a + b.total_nominal, 0);
-  document.getElementById('rekapTotal').textContent = 'Total seluruh dokter: ' + fmtRp(total);
+    <td>${r.total_jam > 0 ? Number(r.total_jam).toFixed(2) : '-'}</td><td>${fmtRp(r.total_nominal)}</td>
+    <td><button class="btn sm" onclick='lihatRincian(${JSON.stringify(r.nama).replace(/'/g, "&apos;")})'>Rincian</button></td></tr>
+  `).join('') || `<tr><td colspan="6" class="muted">${rekapCache.length ? 'Tidak ada dokter yang cocok dengan pencarian' : 'Tidak ada data'}</td></tr>`;
+  const total = data.reduce((a, b) => a + b.total_nominal, 0);
+  const tersaring = data.length !== rekapCache.length;
+  document.getElementById('rekapTotal').textContent = (tersaring ? 'Total ' + data.length + ' dokter terpilih: ' : 'Total seluruh dokter: ') + fmtRp(total);
+}
+// Rincian: buka Riwayat Absensi dokter tersebut untuk bulan yang sedang direkap
+function lihatRincian(nama) {
+  const [y, m] = rekapBulanCache.split('-').map(Number);
+  const akhir = new Date(y, m, 0).getDate();
+  document.getElementById('abDari').value = rekapBulanCache + '-01';
+  document.getElementById('abSampai').value = rekapBulanCache + '-' + String(akhir).padStart(2, '0');
+  document.getElementById('abCari').value = nama;
+  document.querySelector('nav button[data-tab=absensi]').click();
 }
 function unduhRekapHonorExcel() {
   if (!rekapCache.length) return alert('Tampilkan rekap bulan yang diinginkan terlebih dahulu (klik Tampilkan).');
-  const rows = rekapCache.map(r => ({
+  const dataRekap = rekapTersaring();
+  if (!dataRekap.length) return alert('Tidak ada dokter yang cocok dengan pencarian.');
+  const rows = dataRekap.map(r => ({
     'Nama Dokter': r.nama,
     'Kategori': r.kategori,
     'Jumlah Shift/Sesi': r.jumlah_shift,
     'Total Jam': r.total_jam > 0 ? Number(Number(r.total_jam).toFixed(2)) : '-',
     'Total Honor (Rp)': r.total_nominal
   }));
-  const totalHonor = rekapCache.reduce((a, b) => a + b.total_nominal, 0);
+  const totalHonor = dataRekap.reduce((a, b) => a + b.total_nominal, 0);
   rows.push({});
-  rows.push({ 'Nama Dokter': 'TOTAL SELURUH DOKTER', 'Total Honor (Rp)': totalHonor });
+  rows.push({ 'Nama Dokter': dataRekap.length === rekapCache.length ? 'TOTAL SELURUH DOKTER' : 'TOTAL ' + dataRekap.length + ' DOKTER TERPILIH', 'Total Honor (Rp)': totalHonor });
   unduhExcel(rows, 'Rekap Honor Bulanan — RSU Allam Medica (' + rekapBulanCache + ')',
     'Rekap_Honor_Dokter_' + rekapBulanCache);
 }
@@ -705,19 +776,30 @@ async function loadAbsensiRange() {
   const j = await api('getAbsensiRange', { dari, sampai });
   if (!j.ok) return;
   absensiRangeCache = j.data;
-  document.getElementById('absensiBody').innerHTML = j.data.map(r => `
+  renderRiwayat();
+}
+function riwayatTersaring() {
+  const q = (document.getElementById('abCari').value || '').trim().toLowerCase();
+  return q ? absensiRangeCache.filter(r => String(r.Nama_Dokter).toLowerCase().includes(q)) : absensiRangeCache;
+}
+function renderRiwayat() {
+  const data = riwayatTersaring();
+  const totalR = data.reduce((a, b) => a + (Number(b.Nominal) || 0), 0);
+  document.getElementById('riwayatTotal').textContent = data.length ? data.length + ' absensi, total honor ' + fmtRp(totalR) : '';
+  document.getElementById('absensiBody').innerHTML = data.map(r => `
     <tr><td>${esc(r.Tanggal)}</td><td>${esc(r.Nama_Dokter)}</td><td>${tagHtml(r.Kategori)}</td><td class="shift">${esc(r.Shift_Terdeteksi)}</td>
     <td>${esc(r.Jam_Masuk)}</td><td>${fotoLink(r.Foto_Masuk_URL)}</td>
     <td>${r.Jam_Keluar ? esc(r.Jam_Keluar) : '<span class="muted">belum keluar</span>'}</td><td>${fotoLink(r.Foto_Keluar_URL)}</td>
     <td>${fmtRp(r.Nominal)}${r.Keterangan ? `<span class="ket">${esc(r.Keterangan)}</span>` : ''}</td><td>${esc(r.Status_Nominal)}</td>
     <td><div class="aksi-baris"><button class="btn sm" onclick='koreksi(${JSON.stringify(r).replace(/'/g,"&apos;")})'>Koreksi</button>${AKTOR_ROLE === 'Super Admin' ? `<button class="btn sm bad" onclick='hapusAbsensi(${JSON.stringify({ id: r.ID_Absen, nama: r.Nama_Dokter, tgl: r.Tanggal, masuk: r.Jam_Masuk, nominal: r.Nominal }).replace(/'/g,"&apos;")})'>Hapus</button>` : ''}</div></td></tr>
-  `).join('') || '<tr><td colspan="11" class="muted">Tidak ada data</td></tr>';
+  `).join('') || `<tr><td colspan="11" class="muted">${absensiRangeCache.length ? 'Tidak ada dokter yang cocok dengan pencarian' : 'Tidak ada data'}</td></tr>`;
 }
 function unduhRiwayatExcel() {
-  if (!absensiRangeCache.length) return alert('Tidak ada data pada rentang tanggal ini untuk diunduh.');
+  const dataRiwayat = riwayatTersaring();
+  if (!dataRiwayat.length) return alert('Tidak ada data pada rentang tanggal / pencarian ini untuk diunduh.');
   const dari = document.getElementById('abDari').value;
   const sampai = document.getElementById('abSampai').value;
-  const rows = absensiRangeCache.map(r => ({
+  const rows = dataRiwayat.map(r => ({
     'Tanggal': r.Tanggal,
     'Nama Dokter': r.Nama_Dokter,
     'Kategori': r.Kategori,
@@ -729,7 +811,7 @@ function unduhRiwayatExcel() {
     'Status Nominal': r.Status_Nominal,
     'Keterangan': r.Keterangan || ''
   }));
-  const totalNominal = absensiRangeCache.reduce((a, b) => a + (Number(b.Nominal) || 0), 0);
+  const totalNominal = dataRiwayat.reduce((a, b) => a + (Number(b.Nominal) || 0), 0);
   rows.push({});
   rows.push({ 'Tanggal': 'TOTAL', 'Nominal (Rp)': totalNominal });
   unduhExcel(rows, 'Riwayat Absensi Dokter — RSU Allam Medica (' + dari + ' s/d ' + sampai + ')',
@@ -779,6 +861,107 @@ async function koreksi(r) {
   const ket = prompt('Keterangan koreksi (opsional):', r.Keterangan || '');
   const j = await api('updateAbsensi', { data: { ID_Absen: r.ID_Absen, Nominal: nominalBaru, Keterangan: ket } });
   if (j.ok) loadAbsensiRange(); else alert(j.error);
+}
+
+/* ===== KATEGORI (Super Admin) ===== */
+let kategoriCache = [];
+const METODE_LABEL = { SHIFT: 'Per shift', PER_JAM: 'Per jam', GF: 'Guarantee Fee per kedatangan' };
+const METODE_PENJELASAN = {
+  SHIFT: 'Honor per shift diambil dari menu Tarif & Shift → Tarif per Shift. Setelah kategori disimpan, isi tarif Pagi/Siang/Malam untuk kategori ini. Telat dari jam mulai shift dipotong otomatis.',
+  PER_JAM: 'Honor = tarif per jam × lama jaga, dihitung saat Absen Keluar. Kalau Tarif per jam dikosongkan, dipakai Tarif Manajerial sesuai jabatan dokter (atau tarif "Umum").',
+  GF: 'Honor per kedatangan = GF bulanan ÷ target hari, diatur per dokter di Data Dokter. Telat dari jam praktik GF dipotong otomatis.'
+};
+async function loadKategori() { renderKategori(await api('getKategori')); }
+function renderKategori(j) {
+  if (!j || !j.ok) return;
+  kategoriCache = j.data;
+  document.getElementById('kategoriBody').innerHTML = j.data.map(k => `
+    <tr><td>${esc(k.Urutan)}</td><td>${tagHtml(k.Nama_Kategori)}</td>
+    <td>${esc(METODE_LABEL[k.Metode_Honor] || k.Metode_Honor)}${k.Metode_Honor === 'PER_JAM' ? (Number(k.Tarif_Per_Jam) > 0 ? ' (' + fmtRp(k.Tarif_Per_Jam) + '/jam)' : ' (tarif dari Tarif Manajerial)') : ''}</td>
+    <td>${esc(k.Status || 'Aktif')}</td>
+    <td><div class="aksi-baris"><button class="btn sm" onclick='editKategori(${JSON.stringify(k).replace(/'/g, "&apos;")})'>Edit</button><button class="btn sm bad" onclick='deleteKategori(${JSON.stringify(k.Nama_Kategori).replace(/'/g, "&apos;")})'>Hapus</button></div></td></tr>
+  `).join('') || '<tr><td colspan="5" class="muted">Belum ada kategori</td></tr>';
+  isiDropdownKategori();
+}
+// Semua pilihan kategori di dashboard mengikuti daftar kategori aktif
+function isiDropdownKategori() {
+  const aktif = kategoriCache.filter(k => String(k.Status).toLowerCase() !== 'nonaktif');
+  const isi = (id, list) => {
+    const el = document.getElementById(id);
+    if (!el || !list.length) return;
+    const v = el.value;
+    el.innerHTML = list.map(k => `<option>${esc(k.Nama_Kategori)}</option>`).join('');
+    if (list.some(k => k.Nama_Kategori === v)) el.value = v;
+  };
+  isi('dkKategori', aktif);
+  isi('jdKategori', aktif);
+  isi('tsKategori', aktif.filter(k => k.Metode_Honor === 'SHIFT'));
+}
+// Pastikan nilai tetap bisa dipilih walau kategorinya sudah dinonaktifkan
+function setPilihan(id, nilai) {
+  const el = document.getElementById(id);
+  if (nilai && !Array.from(el.options).some(o => o.value === nilai)) {
+    const o = document.createElement('option'); o.textContent = nilai; el.appendChild(o);
+  }
+  el.value = nilai;
+}
+function ubahMetodeKategori() {
+  const m = document.getElementById('ktMetode').value;
+  document.getElementById('ktTarifBox').style.display = m === 'PER_JAM' ? '' : 'none';
+  document.getElementById('ktPenjelasan').textContent = METODE_PENJELASAN[m] || '';
+}
+function resetKategoriForm() {
+  ['ktNamaLama', 'ktNama', 'ktTarif', 'ktUrutan'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('ktMetode').value = 'SHIFT';
+  document.getElementById('ktStatus').value = 'Aktif';
+  document.getElementById('ktJudul').textContent = 'Tambah Kategori Jaga';
+  document.getElementById('ktTombol').textContent = 'Simpan Kategori';
+  ubahMetodeKategori();
+}
+function editKategori(k) {
+  document.getElementById('ktNamaLama').value = k.Nama_Kategori;
+  document.getElementById('ktNama').value = k.Nama_Kategori;
+  document.getElementById('ktMetode').value = k.Metode_Honor;
+  document.getElementById('ktTarif').value = k.Tarif_Per_Jam || '';
+  document.getElementById('ktUrutan').value = k.Urutan || '';
+  document.getElementById('ktStatus').value = String(k.Status).toLowerCase() === 'nonaktif' ? 'Nonaktif' : 'Aktif';
+  ubahMetodeKategori();
+  document.getElementById('ktJudul').textContent = 'Ubah Kategori: ' + k.Nama_Kategori;
+  document.getElementById('ktTombol').textContent = 'Simpan Perubahan';
+  document.getElementById('ktJudul').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('ktNama').focus();
+}
+async function saveKategori() {
+  const data = {
+    _nama_lama: document.getElementById('ktNamaLama').value,
+    Nama_Kategori: document.getElementById('ktNama').value.trim(),
+    Metode_Honor: document.getElementById('ktMetode').value,
+    Tarif_Per_Jam: document.getElementById('ktTarif').value,
+    Urutan: document.getElementById('ktUrutan').value,
+    Status: document.getElementById('ktStatus').value
+  };
+  if (!data.Nama_Kategori) return alert('Nama kategori wajib diisi');
+  const lamaK = kategoriCache.find(k => k.Nama_Kategori === data._nama_lama);
+  if (lamaK && lamaK.Nama_Kategori !== data.Nama_Kategori &&
+      !confirm('Ganti nama "' + lamaK.Nama_Kategori + '" menjadi "' + data.Nama_Kategori + '"?\n\nNama lama di riwayat absensi, tarif, data dokter, dan jadwal akan ikut diganti.')) return;
+  if (lamaK && lamaK.Metode_Honor !== data.Metode_Honor &&
+      !confirm('Cara hitung honor diubah dari "' + METODE_LABEL[lamaK.Metode_Honor] + '" menjadi "' + METODE_LABEL[data.Metode_Honor] + '".\n\nBerlaku untuk absen berikutnya. Absensi lama tidak berubah kecuali Anda menjalankan Hitung Ulang Nominal.')) return;
+  const j = await api('saveKategori', { data });
+  if (!j.ok) return alert(j.error);
+  const baru = !data._nama_lama;
+  resetKategoriForm();
+  await loadKategori();
+  if (baru && data.Metode_Honor === 'SHIFT') {
+    alert('Kategori "' + data.Nama_Kategori + '" tersimpan dan sudah muncul di halaman absen.\n\nLangkah berikutnya: isi tarifnya di menu Tarif & Shift → Tarif per Shift (Pagi/Siang/Malam). Tanpa tarif, honornya tercatat Rp 0.');
+  } else {
+    alert('Kategori "' + data.Nama_Kategori + '" tersimpan.' + (j.data_diganti ? '\n' + j.data_diganti + ' data lama ikut diganti ke nama baru.' : ''));
+  }
+  if (j.data_diganti) muatSemuaData();
+}
+async function deleteKategori(nama) {
+  if (!confirm('Hapus kategori "' + nama + '"?')) return;
+  const j = await api('deleteKategori', { nama });
+  if (j.ok) loadKategori(); else alert(j.error);
 }
 
 /* ===== GPS (Super Admin only) ===== */
@@ -881,6 +1064,7 @@ async function muatSemuaData() {
     if (!j.relogin) document.getElementById('monBody').innerHTML = `<tr><td colspan="9" style="color:var(--bad);">${esc(j.error)}</td></tr>`;
     return;
   }
+  renderKategori(j.kategori);
   renderMonitor(j.monitor);
   renderDokter(j.dokter);
   renderJadwal(j.jadwal);
