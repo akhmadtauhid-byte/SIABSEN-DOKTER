@@ -95,6 +95,7 @@
   <button data-tab="rekap">Rekap Honor</button>
   <button data-tab="absensi">Riwayat Absensi</button>
   <button data-tab="kategori" id="navKategori" style="display:none;">Kategori</button>
+  <button data-tab="foto" id="navFoto" style="display:none;">Arsip Foto</button>
   <button data-tab="gps" id="navGps" style="display:none;">Lokasi GPS</button>
   <button data-tab="akun" id="navAkun" style="display:none;">Akun Admin</button>
 </nav>
@@ -249,10 +250,12 @@
       <div class="row">
         <div class="field" style="flex:1 1 320px;"><label>Cari dokter</label><input type="search" id="rkCari" placeholder="Ketik nama dokter..." oninput="renderRekap()" autocomplete="off"></div>
         <div class="field"><label>Kategori</label><select id="rkKategori" onchange="renderRekap()"><option value="">Semua kategori</option></select></div>
+        <div class="field" style="flex:0 0 auto;"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:inherit;cursor:pointer;margin:0;padding:9px 0;"><input type="checkbox" id="rkPerShift" checked onchange="renderRekap()" style="width:auto;margin:0;"> Rincian per shift</label></div>
       </div>
       <div class="scroll-x"><table>
-        <thead><tr><th>Nama</th><th>Kategori</th><th>Jumlah Shift/Sesi</th><th>Total Jam</th><th>Total Honor</th><th></th></tr></thead>
+        <thead id="rekapHead"><tr><th>Nama</th><th>Kategori</th><th>Jumlah Shift/Sesi</th><th>Total Jam</th><th>Total Honor</th><th></th></tr></thead>
         <tbody id="rekapBody"></tbody>
+        <tfoot id="rekapFoot"></tfoot>
       </table></div>
       <div class="totalbar" id="rekapTotal"></div>
     </div>
@@ -312,6 +315,24 @@
     </div>
   </div>
 
+  <!-- ARSIP FOTO (khusus Super Admin) -->
+  <div class="tab" id="tab-foto">
+    <div class="card">
+      <h3>Arsip Foto Absensi per Bulan</h3>
+      <p class="muted" style="margin-top:0;">Foto bukti absensi disimpan otomatis di Google Drive, dikelompokkan per bulan di dalam folder "Foto Absensi Dokter". Foto yang dihapus masuk ke Sampah Google Drive dan masih bisa dipulihkan dari sana selama 30 hari.</p>
+      <div class="row">
+        <button class="btn" onclick="loadArsipFoto()">Muat ulang</button>
+        <button class="btn excel" id="btnBukaFolderFoto" onclick="bukaFolderFoto()">📂 Buka folder di Google Drive</button>
+      </div>
+      <div id="fotoLepasInfo"></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Bulan</th><th>Jumlah foto</th><th>Ukuran</th><th></th></tr></thead>
+        <tbody id="arsipFotoBody"><tr><td colspan="4" class="muted">Klik "Muat ulang" untuk melihat arsip foto.</td></tr></tbody>
+      </table></div>
+      <div class="totalbar" id="arsipFotoTotal"></div>
+    </div>
+  </div>
+
   <!-- GPS (khusus Super Admin) -->
   <div class="tab" id="tab-gps">
     <div class="card">
@@ -363,7 +384,7 @@
 </div>
 
 <script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbxH8s3CbHOs9Km09sFfwXUn3wMA502GQSU5fVjoxEUq70Gth5yL2YG0p_PbhG1--YKRhQ/exec';
+const API_URL = 'PASTE_URL_WEBAPP_APPS_SCRIPT_DISINI';
 let AKTOR = null;
 let AKTOR_ROLE = null;
 let TOKEN = null;
@@ -463,6 +484,7 @@ function masukApp(nama, role) {
   document.getElementById('navAkun').style.display = superAdmin ? 'inline-block' : 'none';
   document.getElementById('navGps').style.display = superAdmin ? 'inline-block' : 'none';
   document.getElementById('navKategori').style.display = superAdmin ? 'inline-block' : 'none';
+  document.getElementById('navFoto').style.display = superAdmin ? 'inline-block' : 'none';
   initApp();
 }
 
@@ -474,6 +496,7 @@ document.querySelectorAll('nav button').forEach(btn => {
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'absensi') loadAbsensiRange();
+    if (btn.dataset.tab === 'foto') loadArsipFoto();
   });
 });
 
@@ -707,6 +730,7 @@ async function saveShiftConfig() {
 
 /* ===== REKAP ===== */
 let rekapCache = [];
+let rekapShiftCache = [];
 let rekapBulanCache = '';
 async function loadRekap() {
   const bulan = document.getElementById('rkBulan').value;
@@ -714,6 +738,7 @@ async function loadRekap() {
   const j = await api('getRekapHonor', { bulan });
   if (!j.ok) return alert(j.error);
   rekapCache = j.data;
+  rekapShiftCache = j.daftar_shift || [];
   rekapBulanCache = bulan;
   // isi pilihan kategori dari data bulan ini
   const kats = [...new Set(j.data.flatMap(r => r.kategori_list || [r.kategori]))].filter(Boolean).sort();
@@ -731,13 +756,30 @@ function rekapTersaring() {
 function renderRekap() {
   if (!rekapBulanCache) return;
   const data = rekapTersaring();
+  const perShift = document.getElementById('rkPerShift').checked;
+  const shifts = perShift ? rekapShiftCache : [];
+  // judul kolom: kolom per shift muncul sesuai shift yang ada di bulan itu
+  document.getElementById('rekapHead').innerHTML = '<tr><th>Nama</th><th>Kategori</th>' +
+    shifts.map(s => `<th style="text-align:center;">${esc(s)}</th>`).join('') +
+    '<th>Jumlah Shift/Sesi</th><th>Total Jam</th><th>Total Honor</th><th></th></tr>';
+  const selShift = (r, s) => {
+    const v = (r.per_shift || {})[s];
+    return v ? `<td style="text-align:center;"><b>${v.jumlah}×</b><span class="muted" style="display:block;">${fmtRp(v.nominal)}</span></td>` : '<td style="text-align:center;" class="muted">-</td>';
+  };
+  const kolom = 4 + shifts.length + 2;
   document.getElementById('rekapBody').innerHTML = data.map(r => `
     <tr><td>${esc(r.nama)}${r.sesi_ditahan ? `<span class="ket">⏸ ${r.sesi_ditahan} sesi lupa Absen Keluar — ${fmtRp(r.nominal_ditahan)} ditahan, perlu verifikasi</span>` : ''}${r.sesi_terbuka ? `<span class="muted" style="display:block;">${r.sesi_terbuka} sesi masih jaga</span>` : ''}</td>
-    <td>${(r.kategori_list || [r.kategori]).map(tagHtml).join(' ')}</td><td>${r.jumlah_shift}</td>
-    <td>${r.total_jam > 0 ? Number(r.total_jam).toFixed(2) : '-'}</td><td>${fmtRp(r.total_nominal)}</td>
+    <td>${(r.kategori_list || [r.kategori]).map(tagHtml).join(' ')}</td>${shifts.map(s => selShift(r, s)).join('')}<td>${r.jumlah_shift}</td>
+    <td>${r.total_jam > 0 ? Number(r.total_jam).toFixed(2) : '-'}</td><td><b>${fmtRp(r.total_nominal)}</b></td>
     <td><button class="btn sm" onclick='lihatRincian(${JSON.stringify(r.nama).replace(/'/g, "&apos;")})'>Rincian</button></td></tr>
-  `).join('') || `<tr><td colspan="6" class="muted">${rekapCache.length ? 'Tidak ada dokter yang cocok dengan pencarian' : 'Tidak ada data'}</td></tr>`;
+  `).join('') || `<tr><td colspan="${kolom}" class="muted">${rekapCache.length ? 'Tidak ada dokter yang cocok dengan pencarian' : 'Tidak ada data'}</td></tr>`;
   const total = data.reduce((a, b) => a + b.total_nominal, 0);
+  // baris total per shift
+  document.getElementById('rekapFoot').innerHTML = (shifts.length && data.length) ? '<tr><th colspan="2">Total per shift</th>' + shifts.map(s => {
+    const j = data.reduce((a, r) => a + (((r.per_shift || {})[s] || {}).jumlah || 0), 0);
+    const n = data.reduce((a, r) => a + (((r.per_shift || {})[s] || {}).nominal || 0), 0);
+    return `<th style="text-align:center;">${j}×<span style="display:block;font-weight:600;">${fmtRp(n)}</span></th>`;
+  }).join('') + `<th>${data.reduce((a, r) => a + r.jumlah_shift, 0)}</th><th></th><th>${fmtRp(total)}</th><th></th></tr>` : '';
   const tersaring = data.length !== rekapCache.length;
   const ditahan = data.reduce((a, b) => a + (b.nominal_ditahan || 0), 0);
   const sesiDitahan = data.reduce((a, b) => a + (b.sesi_ditahan || 0), 0);
@@ -757,20 +799,32 @@ function unduhRekapHonorExcel() {
   if (!rekapCache.length) return alert('Tampilkan rekap bulan yang diinginkan terlebih dahulu (klik Tampilkan).');
   const dataRekap = rekapTersaring();
   if (!dataRekap.length) return alert('Tidak ada dokter yang cocok dengan pencarian.');
-  const rows = dataRekap.map(r => ({
-    'Nama Dokter': r.nama,
-    'Kategori': r.kategori,
-    'Jumlah Shift/Sesi': r.jumlah_shift,
-    'Total Jam': r.total_jam > 0 ? Number(Number(r.total_jam).toFixed(2)) : '-',
-    'Total Honor (Rp)': r.total_nominal,
-    'Sesi Lupa Absen Keluar': r.sesi_ditahan || 0,
-    'Honor Ditahan (Rp)': r.nominal_ditahan || 0
-  }));
-  const totalHonor = dataRekap.reduce((a, b) => a + b.total_nominal, 0);
-  const totalDitahan = dataRekap.reduce((a, b) => a + (b.nominal_ditahan || 0), 0);
+  const shifts = rekapShiftCache;
+  const rows = dataRekap.map(r => {
+    const o = { 'Nama Dokter': r.nama, 'Kategori': r.kategori };
+    shifts.forEach(s => {
+      const v = (r.per_shift || {})[s] || {};
+      o[s + ' (kali)'] = v.jumlah || 0;
+      o[s + ' (Rp)'] = v.nominal || 0;
+    });
+    o['Jumlah Shift/Sesi'] = r.jumlah_shift;
+    o['Total Jam'] = r.total_jam > 0 ? Number(Number(r.total_jam).toFixed(2)) : '-';
+    o['Total Honor (Rp)'] = r.total_nominal;
+    o['Sesi Lupa Absen Keluar'] = r.sesi_ditahan || 0;
+    o['Honor Ditahan (Rp)'] = r.nominal_ditahan || 0;
+    return o;
+  });
+  const totalRow = { 'Nama Dokter': dataRekap.length === rekapCache.length ? 'TOTAL SELURUH DOKTER' : 'TOTAL ' + dataRekap.length + ' DOKTER TERPILIH' };
+  shifts.forEach(s => {
+    totalRow[s + ' (kali)'] = dataRekap.reduce((a, r) => a + (((r.per_shift || {})[s] || {}).jumlah || 0), 0);
+    totalRow[s + ' (Rp)'] = dataRekap.reduce((a, r) => a + (((r.per_shift || {})[s] || {}).nominal || 0), 0);
+  });
+  totalRow['Jumlah Shift/Sesi'] = dataRekap.reduce((a, r) => a + r.jumlah_shift, 0);
+  totalRow['Total Honor (Rp)'] = dataRekap.reduce((a, b) => a + b.total_nominal, 0);
+  totalRow['Honor Ditahan (Rp)'] = dataRekap.reduce((a, b) => a + (b.nominal_ditahan || 0), 0);
   rows.push({});
-  rows.push({ 'Nama Dokter': dataRekap.length === rekapCache.length ? 'TOTAL SELURUH DOKTER' : 'TOTAL ' + dataRekap.length + ' DOKTER TERPILIH', 'Total Honor (Rp)': totalHonor, 'Honor Ditahan (Rp)': totalDitahan });
-  unduhExcel(rows, 'Rekap Honor Bulanan — RSU Allam Medica (' + rekapBulanCache + ')',
+  rows.push(totalRow);
+  unduhExcel(rows, 'Rekap Honor Bulanan per Shift — RSU Allam Medica (' + rekapBulanCache + ')',
     'Rekap_Honor_Dokter_' + rekapBulanCache);
 }
 
@@ -988,6 +1042,48 @@ async function deleteKategori(nama) {
   if (!confirm('Hapus kategori "' + nama + '"?')) return;
   const j = await api('deleteKategori', { nama });
   if (j.ok) loadKategori(); else alert(j.error);
+}
+
+/* ===== ARSIP FOTO (Super Admin) ===== */
+let urlFolderFoto = '';
+const NAMA_BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function fmtUkuran(bytes) { const b = Number(bytes) || 0; return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+function labelBulan(b) { const [y, m] = b.split('-'); return NAMA_BULAN[Number(m) - 1] + ' ' + y; }
+async function loadArsipFoto() {
+  document.getElementById('arsipFotoBody').innerHTML = '<tr><td colspan="4" class="muted">Menghitung foto di Google Drive...</td></tr>';
+  const j = await api('getArsipFoto', {}, 120);
+  if (!j.ok) { document.getElementById('arsipFotoBody').innerHTML = `<tr><td colspan="4" style="color:var(--bad);">${esc(j.error)}</td></tr>`; return; }
+  urlFolderFoto = j.url_induk;
+  document.getElementById('fotoLepasInfo').innerHTML = j.belum_dikelompokkan
+    ? `<p class="ket" style="max-width:none;font-size:.85rem;margin:0 0 12px;">Ada ${j.belum_dikelompokkan} foto lama (${fmtUkuran(j.bytes_belum)}) yang belum dikelompokkan per bulan. <button class="btn sm" onclick="rapikanFotoLama()">Kelompokkan sekarang</button></p>` : '';
+  document.getElementById('arsipFotoBody').innerHTML = j.data.map(f => `
+    <tr><td><b>${esc(labelBulan(f.bulan))}</b><span class="muted" style="display:block;">${esc(f.bulan)}${f.bulan === j.bulan_ini ? ' (bulan berjalan)' : ''}</span></td>
+    <td>${f.jumlah} foto</td><td>${fmtUkuran(f.bytes)}</td>
+    <td><div class="aksi-baris"><button class="btn sm" onclick="window.open('${esc(f.url)}','_blank')">Buka</button>${f.bulan === j.bulan_ini ? '' : `<button class="btn sm bad" onclick="hapusFotoBulan('${esc(f.bulan)}', ${f.jumlah})">Hapus</button>`}</div></td></tr>
+  `).join('') || '<tr><td colspan="4" class="muted">Belum ada foto yang dikelompokkan per bulan.</td></tr>';
+  const tot = j.data.reduce((a, b) => a + (b.bytes || 0), 0) + (j.bytes_belum || 0);
+  const jml = j.data.reduce((a, b) => a + b.jumlah, 0) + (j.belum_dikelompokkan || 0);
+  document.getElementById('arsipFotoTotal').textContent = 'Total ' + jml + ' foto, ' + fmtUkuran(tot) + ' di Google Drive';
+}
+function bukaFolderFoto() { if (urlFolderFoto) window.open(urlFolderFoto, '_blank'); else loadArsipFoto(); }
+async function rapikanFotoLama() {
+  const j = await api('rapikanFotoLama', {}, 300);
+  if (!j.ok) return alert(j.error);
+  alert(j.dipindah + ' foto sudah dikelompokkan ke folder bulannya.' + (j.sisa ? '\n\nMasih ada ' + j.sisa + ' foto — klik "Kelompokkan sekarang" sekali lagi.' : ''));
+  loadArsipFoto();
+}
+async function hapusFotoBulan(bulan, jumlah) {
+  if (!confirm('Hapus ' + jumlah + ' foto absensi bulan ' + labelBulan(bulan) + '?\n\n' +
+    '• Foto dipindah ke Sampah Google Drive (bisa dipulihkan dari Drive selama 30 hari)\n' +
+    '• Data absensi & honor TIDAK terhapus, hanya link fotonya yang dikosongkan\n' +
+    '• Pastikan foto bulan ini sudah tidak dibutuhkan untuk audit/akreditasi')) return;
+  const ketik = prompt('Untuk konfirmasi, ketik bulannya persis: ' + bulan);
+  if (ketik === null) return;
+  if (ketik.trim() !== bulan) return alert('Konfirmasi tidak cocok. Foto tidak dihapus.');
+  const j = await api('hapusFotoBulan', { bulan }, 300);
+  if (!j.ok) return alert(j.error);
+  alert(j.jumlah + ' foto bulan ' + labelBulan(bulan) + ' sudah dipindah ke Sampah Google Drive.\n' + j.baris_diperbarui + ' baris absensi diberi keterangan.');
+  loadArsipFoto();
 }
 
 /* ===== GPS (Super Admin only) ===== */
